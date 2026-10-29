@@ -1,0 +1,18 @@
+# Build output
+*/out/
+*/classes/
+*/classes-pv/
+
+# Third-party jars are fetched, not vendored (see lib/fetch.sh)
+lib/*.jar
+
+# macOS
+.DS_Store
+
+# Build output
+/out/
+/classes/
+/classes-pv/
+
+# Fetched to generate the font atlases; not redistributed here
+/lib/fonts/
