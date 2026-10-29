@@ -1,5 +1,12 @@
 # Installing the WebSocket bridge
 
+> [!NOTE]
+> This guide comes from berryssh, unchanged, and describes its author's own
+> setup: `ssh.cobanov.run`, `pve` and the tailnet are examples from there.
+> Substitute your own host names. Most people do not need the bridge at all:
+> it is only for servers the phone cannot reach directly. Voice input does not
+> work through it.
+
 The client half is done and tested. This is the server half, which touches
 machines of yours and so is yours to run.
 
