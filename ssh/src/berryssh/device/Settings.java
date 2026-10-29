@@ -28,9 +28,14 @@ public final class Settings {
      * Format 1 had no smooth-scroll field, format 2 no key bar or tmux; the
      * missing ones read as on.
      */
-    private static final int FORMAT = 3;
+    private static final int FORMAT = 4;
     private static final int FORMAT_WITHOUT_SMOOTH = 1;
     private static final int FORMAT_WITHOUT_SESSION = 2;
+    private static final int FORMAT_WITHOUT_VOICE = 3;
+
+    /** What berryssh-transcribe is told to listen for. */
+    public static final String[] VOICE_LANGUAGES = { "auto", "ru", "en" };
+    public static final String[] VOICE_NAMES = { "Russian or English", "Russian", "English" };
 
     public static final String[] TEXT_NAMES = {
         "From theme", "White", "Light grey", "Grey", "Claude orange",
@@ -73,6 +78,8 @@ public final class Settings {
         // tmux waits half a second after Escape by default, to see whether a
         // sequence follows. Claude Code's Escape would lag by that much.
         + " \\; set -s escape-time 10"
+        // Taps reach programs as clicks (OpenCode's tabs), swipes as the wheel.
+        + " \\; set -g mouse on"
         + " \\; new-session -A -s bb"
         + " || exec \"$SHELL\" -l";
 
@@ -84,12 +91,18 @@ public final class Settings {
     private final boolean smoothScroll;
     private final boolean keyBar;
     private final boolean tmux;
+    private final int voice;
 
     /**
      * @param fontSize a Profile font index, or -1 to use each connection's own
      */
     public Settings(int theme, int text, int background, int fontSize, int terminalType,
                     boolean smoothScroll, boolean keyBar, boolean tmux) {
+        this(theme, text, background, fontSize, terminalType, smoothScroll, keyBar, tmux, 0);
+    }
+
+    public Settings(int theme, int text, int background, int fontSize, int terminalType,
+                    boolean smoothScroll, boolean keyBar, boolean tmux, int voice) {
         this.theme = clamp(theme, Theme.ALL.length, 0);
         this.text = clamp(text, TEXT_COLOURS.length, 0);
         this.background = clamp(background, BACKGROUND_COLOURS.length, 0);
@@ -98,6 +111,7 @@ public final class Settings {
         this.smoothScroll = smoothScroll;
         this.keyBar = keyBar;
         this.tmux = tmux;
+        this.voice = clamp(voice, VOICE_LANGUAGES.length, 0);
     }
 
     public static Settings defaults() {
@@ -144,6 +158,20 @@ public final class Settings {
         return tmux;
     }
 
+    public int voiceIndex() {
+        return voice;
+    }
+
+    /** The language argument for berryssh-transcribe. */
+    public String voiceLanguage() {
+        return VOICE_LANGUAGES[voice];
+    }
+
+    public Settings withVoice(int value) {
+        return new Settings(theme, text, background, fontSize, terminalType, smoothScroll,
+            keyBar, tmux, value);
+    }
+
     /** The theme with any text or background override applied. */
     public Theme theme() {
         Theme base = Theme.ALL[theme];
@@ -161,35 +189,35 @@ public final class Settings {
     }
 
     public Settings withTheme(int value) {
-        return new Settings(value, text, background, fontSize, terminalType, smoothScroll, keyBar, tmux);
+        return new Settings(value, text, background, fontSize, terminalType, smoothScroll, keyBar, tmux, voice);
     }
 
     public Settings withText(int value) {
-        return new Settings(theme, value, background, fontSize, terminalType, smoothScroll, keyBar, tmux);
+        return new Settings(theme, value, background, fontSize, terminalType, smoothScroll, keyBar, tmux, voice);
     }
 
     public Settings withBackground(int value) {
-        return new Settings(theme, text, value, fontSize, terminalType, smoothScroll, keyBar, tmux);
+        return new Settings(theme, text, value, fontSize, terminalType, smoothScroll, keyBar, tmux, voice);
     }
 
     public Settings withFontSize(int value) {
-        return new Settings(theme, text, background, value, terminalType, smoothScroll, keyBar, tmux);
+        return new Settings(theme, text, background, value, terminalType, smoothScroll, keyBar, tmux, voice);
     }
 
     public Settings withTerminalType(int value) {
-        return new Settings(theme, text, background, fontSize, value, smoothScroll, keyBar, tmux);
+        return new Settings(theme, text, background, fontSize, value, smoothScroll, keyBar, tmux, voice);
     }
 
     public Settings withSmoothScroll(boolean value) {
-        return new Settings(theme, text, background, fontSize, terminalType, value, keyBar, tmux);
+        return new Settings(theme, text, background, fontSize, terminalType, value, keyBar, tmux, voice);
     }
 
     public Settings withKeyBar(boolean value) {
-        return new Settings(theme, text, background, fontSize, terminalType, smoothScroll, value, tmux);
+        return new Settings(theme, text, background, fontSize, terminalType, smoothScroll, value, tmux, voice);
     }
 
     public Settings withTmux(boolean value) {
-        return new Settings(theme, text, background, fontSize, terminalType, smoothScroll, keyBar, value);
+        return new Settings(theme, text, background, fontSize, terminalType, smoothScroll, keyBar, value, voice);
     }
 
     /**
@@ -220,6 +248,7 @@ public final class Settings {
         w.writeBoolean(smoothScroll);
         w.writeBoolean(keyBar);
         w.writeBoolean(tmux);
+        w.writeUint32(voice);
         return w.toByteArray();
     }
 
@@ -236,10 +265,11 @@ public final class Settings {
         int fontSize = (int) r.readUint32() - 1;
         int terminalType = (int) r.readUint32();
         boolean smoothScroll = format < FORMAT_WITHOUT_SESSION || r.readBoolean();
-        boolean keyBar = format < FORMAT || r.readBoolean();
-        boolean tmux = format < FORMAT || r.readBoolean();
+        boolean keyBar = format < FORMAT_WITHOUT_VOICE || r.readBoolean();
+        boolean tmux = format < FORMAT_WITHOUT_VOICE || r.readBoolean();
+        int voice = format < FORMAT ? 0 : (int) r.readUint32();
         return new Settings(theme, text, background, fontSize, terminalType,
-            smoothScroll, keyBar, tmux);
+            smoothScroll, keyBar, tmux, voice);
     }
 
     private static int clamp(int value, int length, int fallback) {

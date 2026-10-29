@@ -30,6 +30,8 @@ public final class ListScreen extends Canvas {
     private String[] names = new String[0];
     private String[] details = new String[0];
     private String hint = "";
+    private String bannerSubtitle;
+    private String bannerBadge;
     private int selected;
     private int scroll;
 
@@ -51,6 +53,13 @@ public final class ListScreen extends Canvas {
         if (selected >= names.length) {
             selected = names.length == 0 ? 0 : names.length - 1;
         }
+        repaint();
+    }
+
+    /** Draws the home screen's header instead of a plain title bar. */
+    public void setBanner(String subtitle, String badge) {
+        bannerSubtitle = subtitle;
+        bannerBadge = badge;
         repaint();
     }
 
@@ -77,7 +86,9 @@ public final class ListScreen extends Canvas {
         g.setColor(Chrome.BACKGROUND);
         g.fillRect(0, 0, width, height);
 
-        int top = Chrome.drawTitleBar(g, width, title);
+        int top = bannerSubtitle != null
+            ? Chrome.drawBanner(g, width, title, bannerSubtitle, bannerBadge)
+            : Chrome.drawTitleBar(g, width, title);
         int bottom = hint.length() > 0
             ? Chrome.drawFooter(g, width, height, hint)
             : height;

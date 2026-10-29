@@ -27,7 +27,7 @@ if ! cldc_output=$(docker run --rm \
     -v "$PWD/..:/client" -w /client/spike2 \
     eclipse-temurin:8-jdk \
     javac -source 1.3 -target 1.3 -nowarn \
-          -bootclasspath /client/lib/cldcapi11.jar:/client/lib/midpapi20.jar \
+          -bootclasspath /client/lib/cldcapi11.jar:/client/lib/midpapi20.jar:/client/lib/mmapi.jar \
           -d classes \
           $(cd .. && find ssh/src -name '*.java' | sed 's|^|/client/|' | tr '\n' ' ') \
     2>&1); then

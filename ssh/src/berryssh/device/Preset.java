@@ -31,11 +31,13 @@ public final class Preset {
     private final Profile profile;
     private final byte[] hostKey;
     private final boolean autoConnect;
+    private final String badge;
 
-    private Preset(Profile profile, byte[] hostKey, boolean autoConnect) {
+    private Preset(Profile profile, byte[] hostKey, boolean autoConnect, String badge) {
         this.profile = profile;
         this.hostKey = hostKey;
         this.autoConnect = autoConnect;
+        this.badge = badge;
     }
 
     /** The preset in this jar, or null for a jar built without one. */
@@ -56,6 +58,7 @@ public final class Preset {
         int fontSize = 0;
         String hostKey = "";
         boolean autoConnect = false;
+        String badge = "";
 
         int start = 0;
         while (start < settings.length()) {
@@ -83,6 +86,8 @@ public final class Preset {
                 fontSize = number(field, value);
             } else if (field.equals("hostkey")) {
                 hostKey = value;
+            } else if (field.equals("badge")) {
+                badge = value;
             } else if (field.equals("autoconnect")) {
                 autoConnect = value.equals("yes") || value.equals("true");
             }
@@ -95,7 +100,7 @@ public final class Preset {
         Profile profile = new Profile(name, host, port, user, "", false,
             privateKey, fontSize, "", "", "");
         byte[] blob = hostKey.length() == 0 ? null : Base64.decode(hostKey);
-        return new Preset(profile, blob, autoConnect);
+        return new Preset(profile, blob, autoConnect, badge);
     }
 
     public Profile profile() {
@@ -104,6 +109,11 @@ public final class Preset {
 
     public boolean autoConnect() {
         return autoConnect;
+    }
+
+    /** Whose phone this is, shown in the status line: a handle, say. */
+    public String badge() {
+        return badge;
     }
 
     /**

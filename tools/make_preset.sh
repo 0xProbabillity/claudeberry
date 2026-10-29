@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bake one connection into the next build, so the handset needs no typing.
 #
-#   tools/make_preset.sh root@203.0.113.7 ~/.ssh/id_ed25519_phone [port]
+#   tools/make_preset.sh root@203.0.113.7 ~/.ssh/id_ed25519_phone [port] [badge]
 #   ./build.sh
 #
 # Writes ssh/res/preset/, which build.sh packs into the jar. The host key is
@@ -22,6 +22,7 @@ fi
 TARGET=$1
 KEY=$2
 PORT=${3:-22}
+BADGE=${4:-}
 USER_NAME=${TARGET%@*}
 HOST=${TARGET#*@}
 
@@ -50,6 +51,7 @@ user=$USER_NAME
 font=0
 autoconnect=yes
 hostkey=$HOSTKEY
+badge=$BADGE
 EOF
 
 echo "preset: $USER_NAME@$HOST:$PORT"

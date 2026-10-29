@@ -40,6 +40,8 @@ public class TerminalTests {
         findsWhatScrolled();
         slidesSmoothly();
         sendsTheMissingKeys();
+        swallowsWhatItDoesNotDo();
+        reportsTheMouse();
 
         System.out.println();
         System.out.println(passed + " passed, " + failed + " failed");
@@ -266,6 +268,18 @@ public class TerminalTests {
             }
         }
         checkTrue("Claude Code's symbols and mascot all have cells", all);
+        String russian = "\u0410\u0411\u0412\u042f\u0430\u0431\u044f\u0401\u0451";
+        boolean cyrillic = true;
+        for (int i = 0; i < russian.length(); i++) {
+            if (BitmapFont.indexOf(russian.charAt(i)) < 0) {
+                cyrillic = false;
+            }
+        }
+        checkTrue("Russian, Yo included, has cells", cyrillic);
+        Headless t = new Headless(20, 3);
+        t.putString("\u041f\u0440\u0438\u0432\u0435\u0442 \u0451");
+        checkTrue("Cyrillic reaches the screen as itself",
+            t.getChar(0, 0) == '\u041f' && t.getChar(5, 0) == '\u0442' && t.getChar(7, 0) == '\u0451');
         checkTrue("the old cells kept their places",
             BitmapFont.indexOf('\u2580') == 357 - 32 && BitmapFont.indexOf('\u259f') == 356);
     }
@@ -381,6 +395,9 @@ public class TerminalTests {
             }
         }
         checkTrue("no two panel cells share a letter", unique);
+        checkTrue("voice is on the bar and on M in the panel",
+            Keys.hotkey(Keys.PANEL, 'm').code == Keys.ACTION_VOICE
+                && Keys.hotkey(Keys.PANEL, 'm').kind == Keys.ACTION && !Keys.hotkey(Keys.PANEL, 'm').keepsPanelOpen());
         checkTrue("the panel is a full grid",
             Keys.PANEL.length % Keys.PANEL_COLUMNS == 0 && Keys.PANEL.length == 25);
 
@@ -418,6 +435,48 @@ public class TerminalTests {
         return true;
     }
 
+    /** What tmux and modern TUIs send at start-up must not reach the screen. */
+    private static void swallowsWhatItDoesNotDo() {
+        String e = "\u001b";
+        String[][] cases = {
+            {"DECRQM", e + "[?2026$p"}, {"the cursor shape", e + "[2 q"},
+            {"XTGETTCAP", e + "P+q4d73\u001b\\"}, {"the kitty graphics query", e + "_Gi=3,a=q;AAAA" + e + "\\"},
+            {"OSC ended by ST", e + "]12;#eeeeee" + e + "\\"}, {"OSC ended by BEL", e + "]0;title\u0007"},
+            {"DA2", e + "[>c"}, {"XTVERSION", e + "[>q"}, {"the kitty keyboard", e + "[>1u"},
+            {"modifyOtherKeys", e + "[>4;1m"}, {"a colon colour", e + "[38:5:208m"}
+        };
+        for (int i = 0; i < cases.length; i++) {
+            Headless t = new Headless(20, 3);
+            t.putString(cases[i][1] + "X");
+            checkTrue(cases[i][0] + " leaves nothing on screen", "X".equals(row(t, 0, 20).trim()));
+        }
+        Headless rep = new Headless(20, 3);
+        rep.putString("a" + e + "[3bX");
+        checkTrue("REP repeats the last character", "aaaaX".equals(row(rep, 0, 20).trim()));
+        Headless colon = new Headless(20, 3);
+        colon.putString(e + "[38:5:208mX");
+        checkTrue("a colon colour is still a colour", foregroundAt(colon, 0, 0) == 208);
+    }
+
+    /** Taps become clicks, and swipes the wheel, once a program asks. */
+    private static void reportsTheMouse() {
+        Headless t = new Headless(80, 24);
+        checkTrue("no clicks are sent until asked", !t.mouseClick(3, 4) && t.sent.length() == 0);
+        t.putString(esc("[?1000h") + esc("[?1006h"));
+        checkTrue("a tap is an SGR press and release, one-based",
+            t.mouseClick(3, 4) && t.sent.toString().equals("\u001b[<0;4;5M\u001b[<0;4;5m"));
+        t.sent.setLength(0);
+        t.mouseWheel(0, 0, true);
+        checkTrue("the wheel up is button 64", t.sent.toString().equals("\u001b[<64;1;1M"));
+        Headless x10 = new Headless(80, 24);
+        x10.putString(esc("[?1000h"));
+        x10.mouseClick(0, 0);
+        checkTrue("without 1006 it is the original byte encoding",
+            x10.sent.toString().equals("\u001b[M !!\u001b[M#!!"));
+        t.putString(esc("[?1000l"));
+        checkTrue("and stops when the program lets go", !t.mouseReporting());
+    }
+
     private static void mapsCharactersToGlyphs() {
         checkTrue("space is the first cell", BitmapFont.indexOf(' ') == 0);
         checkTrue("ASCII is contiguous from there",
@@ -451,7 +510,7 @@ public class TerminalTests {
             BitmapFont.indexOf((char) 7) < 0 && BitmapFont.indexOf((char) 27) < 0);
         checkTrue("C1 controls have no cell", BitmapFont.indexOf((char) 0x85) < 0);
         checkTrue("a character outside the ranges has no cell",
-            BitmapFont.indexOf('\u4e00') < 0 && BitmapFont.indexOf('\u0400') < 0);
+            BitmapFont.indexOf('\u4e00') < 0 && BitmapFont.indexOf('\u0500') < 0);
 
         // Every mapped character has to land inside the atlas the layout claims.
         boolean inBounds = true;

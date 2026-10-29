@@ -2,6 +2,8 @@ import berryssh.device.Preset;
 import berryssh.device.Profile;
 import berryssh.device.Settings;
 import berryssh.device.Theme;
+import berryssh.device.VoiceFormats;
+import berryssh.device.VoiceReply;
 import berryssh.protocol.Ascii;
 import berryssh.protocol.Base64;
 import berryssh.protocol.BridgeAuth;
@@ -72,6 +74,7 @@ public class TransportTests {
         savedConnections();
         presets();
         lookAndFeel();
+        voiceInput();
         opensshPrivateKeys();
         bridgeHandshake();
 
@@ -813,6 +816,67 @@ public class TransportTests {
         checkTrue("every split point decodes cleanly with the tail carried", every);
     }
 
+    /** The phone half of voice input: what to record in, and what came back. */
+    private static void voiceInput() {
+        String[] none = VoiceFormats.locators(null);
+        checkTrue("with nothing listed, 16 kHz PCM is tried first",
+            none[0].equals("capture://audio?encoding=pcm&rate=16000&bits=16&channels=1"));
+        checkTrue("and the device's default comes last", none[none.length - 1].equals("capture://audio"));
+
+        String[] listed = VoiceFormats.locators("encoding=amr encoding=pcm&rate=8000 encoding=pcm&rate=16000");
+        checkTrue("the device's own 16 kHz PCM goes first",
+            listed[0].equals("capture://audio?encoding=pcm&rate=16000"));
+        checkTrue("then its other PCM, then AMR",
+            listed[1].equals("capture://audio?encoding=pcm&rate=8000")
+                && listed[2].equals("capture://audio?encoding=amr"));
+        boolean distinct = true;
+        for (int i = 0; i < listed.length; i++) {
+            for (int j = i + 1; j < listed.length; j++) {
+                if (listed[i].equals(listed[j])) {
+                    distinct = false;
+                }
+            }
+        }
+        checkTrue("nothing is tried twice", distinct);
+        checkTrue("the rate is read off a locator",
+            VoiceFormats.rate("capture://audio?encoding=pcm&rate=16000&bits=16") == 16000
+                && VoiceFormats.rate("capture://audio?encoding=amr") == 0);
+
+        try {
+            checkTrue("the answer is the OK line, whatever came before it",
+                "Покажи файлы".equals(VoiceReply.parse("Warning: HF_TOKEN\nOK Покажи файлы\n")));
+            checkTrue("OK alone means nothing was heard", "".equals(VoiceReply.parse("OK\n")));
+            checkTrue("a CRLF line ending is not part of the text",
+                "run the tests".equals(VoiceReply.parse("OK run the tests\r\n")));
+        } catch (IOException e) {
+            fail("voice replies (threw " + e + ")");
+        }
+        checkRejected("an ERR line is an error", () -> VoiceReply.parse("ERR could not decode\n"));
+        checkRejected("no answer at all is an error", () -> VoiceReply.parse("bash: line 1: oops\n"));
+        try {
+            VoiceReply.parse("bash: berryssh-transcribe: command not found\n");
+            fail("a missing server command is an error");
+        } catch (IOException e) {
+            checkTrue("a missing server command says so", e.getMessage().indexOf("not installed") >= 0);
+        }
+
+        Settings s = Settings.defaults();
+        checkTrue("voice listens for Russian or English by default", "auto".equals(s.voiceLanguage()));
+        try {
+            Settings back = Settings.decode(s.withVoice(1).encode());
+            checkTrue("the voice language survives a round trip", "ru".equals(back.voiceLanguage()));
+        } catch (IOException e) {
+            fail("voice setting round trip (threw " + e + ")");
+        }
+        try {
+            Preset p = Preset.parse("host=h\nuser=u\nbadge=@0xProbabillity\n", null);
+            checkTrue("a preset carries a badge", "@0xProbabillity".equals(p.badge()));
+            checkTrue("and has none unless it says", "".equals(Preset.parse("host=h\nuser=u\n", null).badge()));
+        } catch (IOException e) {
+            fail("preset badge (threw " + e + ")");
+        }
+    }
+
     /** Themes and the settings that pick them. */
     private static void lookAndFeel() {
         Theme claude = Theme.CLAUDE;
@@ -857,6 +921,7 @@ public class TransportTests {
             checkTrue("sessions start in tmux by default, in the one named bb",
                 defaults.tmux() && Settings.TMUX_COMMAND.indexOf("new-session -A -s bb") > 0
                     && Settings.TMUX_COMMAND.indexOf("escape-time 10") > 0
+                    && Settings.TMUX_COMMAND.indexOf("mouse on") > 0
                     && Settings.TMUX_COMMAND.endsWith("|| exec \"$SHELL\" -l"));
         } catch (IOException e) {
             fail("settings round trip (threw " + e + ")");

@@ -265,6 +265,14 @@ public final class Channel {
         return exitStatus;
     }
 
+    /** Tells the server nothing more is coming, so a command reading stdin can finish. */
+    public void sendEof() throws IOException {
+        WireWriter w = new WireWriter(16);
+        w.writeByte(Message.CHANNEL_EOF);
+        w.writeUint32(remoteId);
+        connection.transport().writePacket(w.toByteArray());
+    }
+
     public void close() throws IOException {
         synchronized (windowLock) {
             if (closed) {

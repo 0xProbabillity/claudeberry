@@ -65,7 +65,8 @@ public final class BitmapFont {
         0x2713, 0x2718,   // check marks and crosses
         0x2722, 0x273D,   // the spinner's asterisks and stars
         0x2766, 0x2775,   // heavy angle brackets: the prompt chevron
-        0x29C9, 0x29C9    // two joined squares
+        0x29C9, 0x29C9,   // two joined squares
+        0x0400, 0x045F    // Cyrillic: Russian, with Yo, and its neighbours
     };
 
     private final int cellWidth;

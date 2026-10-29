@@ -19,14 +19,15 @@ import javax.microedition.lcdui.Graphics;
  */
 public final class Chrome {
 
-    public static final int BACKGROUND = 0x0d0d10;
-    public static final int BAR = 0x1b1b22;
-    public static final int ROW = 0x16161c;
-    public static final int SELECTED = 0x1f4d7a;
-    public static final int ACCENT = 0x4a90d9;
-    public static final int TEXT = 0xe8e8ea;
-    public static final int MUTED = 0x8a8a92;
-    public static final int RULE = 0x2a2a33;
+    /** Claude Code's dark look, so the lists match the terminal behind them. */
+    public static final int BACKGROUND = 0x141413;
+    public static final int BAR = 0x1f1e1d;
+    public static final int ROW = 0x1a1918;
+    public static final int SELECTED = 0x3b2a22;
+    public static final int ACCENT = 0xd97757;
+    public static final int TEXT = 0xece9e4;
+    public static final int MUTED = 0x8f8a83;
+    public static final int RULE = 0x2c2a28;
 
     public static final int PADDING = 6;
 
@@ -52,6 +53,39 @@ public final class Chrome {
 
     public static int barHeight() {
         return title().getHeight() + PADDING * 2;
+    }
+
+    /**
+     * The home screen's header: the creature, the name, a line under it, and
+     * a badge on the right. Returns the y the content starts at.
+     */
+    public static int drawBanner(Graphics g, int width, String name, String subtitle,
+                                 String badge) {
+        int qw = 3;
+        int qh = 5;
+        int height = Mascot.height(qh) + PADDING * 4;
+        g.setColor(BAR);
+        g.fillRect(0, 0, width, height);
+        g.setColor(ACCENT);
+        g.fillRect(0, height - 2, width, 2);
+        int mascotTop = (height - 2 - Mascot.height(qh)) / 2;
+        Mascot.draw(g, PADDING * 2, mascotTop, qw, qh);
+
+        int x = PADDING * 4 + Mascot.width(qw);
+        Font big = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD, Font.SIZE_LARGE);
+        int textTop = (height - 2 - big.getHeight() - detail().getHeight()) / 2;
+        g.setColor(TEXT);
+        g.setFont(big);
+        g.drawString(name, x, textTop, Graphics.TOP | Graphics.LEFT);
+        g.setColor(MUTED);
+        g.setFont(detail());
+        g.drawString(subtitle, x, textTop + big.getHeight(), Graphics.TOP | Graphics.LEFT);
+        if (badge != null && badge.length() > 0) {
+            g.setColor(ACCENT);
+            g.setFont(label());
+            g.drawString(badge, width - PADDING * 2, textTop + 2, Graphics.TOP | Graphics.RIGHT);
+        }
+        return height;
     }
 
     /** Draws the top bar and returns the y the content starts at. */

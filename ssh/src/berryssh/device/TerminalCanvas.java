@@ -36,6 +36,8 @@ public final class TerminalCanvas extends Canvas {
     private VT320 terminal;
     private Keyboard keyboard;
     private String status = "";
+    private String badge = "";
+    private boolean recording;
 
     /** Rows above the live screen currently being looked at. Zero is live. */
     private int scrollOffset;
@@ -114,6 +116,18 @@ public final class TerminalCanvas extends Canvas {
         invalidate();
     }
 
+    /** Shown at the right of the status line. */
+    public void setBadge(String badge) {
+        this.badge = badge == null ? "" : badge;
+        repaint();
+    }
+
+    /** Lights the Mic key while the microphone is open. */
+    public void setRecording(boolean on) {
+        recording = on;
+        repaint();
+    }
+
     public void setSmoothScroll(boolean on) {
         smoothScroll = on;
     }
@@ -163,8 +177,11 @@ public final class TerminalCanvas extends Canvas {
                 case Keys.ACTION_BACK:
                     showPage(Keys.PANEL, Keys.PANEL_COLUMNS);
                     return;
-                case Keys.ACTION_CLOSE:
                 case Keys.ACTION_PANEL:
+                    // The bar's own key: opens the panel, and closes it again.
+                    togglePanel();
+                    return;
+                case Keys.ACTION_CLOSE:
                     closePanel();
                     return;
                 default:
@@ -535,7 +552,17 @@ public final class TerminalCanvas extends Canvas {
         g.setColor(theme.statusBar());
         g.fillRect(0, 0, width, cellHeight);
         font.setColours(theme.statusText(), theme.statusBar());
-        for (int i = 0; i < line.length() && i < columns(); i++) {
+        int room = columns();
+        if (badge.length() > 0 && line.length() + badge.length() + 2 <= room) {
+            // On the right, in the accent: whose phone this is.
+            font.setColours(theme.colour(13), theme.statusBar());
+            int at = room - badge.length();
+            for (int i = 0; i < badge.length(); i++) {
+                font.drawChar(g, badge.charAt(i), (at + i) * font.cellWidth(), 0);
+            }
+            font.setColours(theme.statusText(), theme.statusBar());
+        }
+        for (int i = 0; i < line.length() && i < room; i++) {
             font.drawChar(g, line.charAt(i), i * font.cellWidth(), 0);
         }
 
@@ -562,8 +589,12 @@ public final class TerminalCanvas extends Canvas {
             int x1 = (i + 1) * width / n;
             boolean lit = i == pressedKey
                 || (Keys.BAR[i].kind == Keys.CONTROL && keyboard != null && keyboard.controlPending())
-                || (Keys.BAR[i].kind == Keys.ACTION && panel != null);
-            int face = lit ? theme.colour(13) : theme.statusBar();
+                || (Keys.BAR[i].code == Keys.ACTION_PANEL && Keys.BAR[i].kind == Keys.ACTION
+                    && panel != null)
+                || (Keys.BAR[i].code == Keys.ACTION_VOICE && Keys.BAR[i].kind == Keys.ACTION
+                    && recording);
+            int face = !lit ? theme.statusBar()
+                : (recording && Keys.BAR[i].code == Keys.ACTION_VOICE ? 0xd04040 : theme.colour(13));
             int text = lit ? theme.background() : theme.foreground();
             if (lit) {
                 g.setColor(face);
@@ -634,6 +665,16 @@ public final class TerminalCanvas extends Canvas {
         if (lines != 0) {
             dragged = true;
             dragY += lines * font.cellHeight();
+            if (terminal.mouseReporting() && scrollOffset == 0) {
+                // A program that takes the mouse scrolls itself: a finger
+                // moving down is the wheel moving up, as on a laptop.
+                int column = x / font.cellWidth();
+                int row = (y - font.cellHeight()) / font.cellHeight();
+                for (int i = 0; i < (lines < 0 ? -lines : lines); i++) {
+                    terminal.mouseWheel(column, row < 0 ? 0 : row, lines > 0);
+                }
+                return;
+            }
             scrollOffset += lines;
             if (scrollOffset > terminal.screenBase) {
                 scrollOffset = terminal.screenBase;
@@ -671,7 +712,15 @@ public final class TerminalCanvas extends Canvas {
                 listener.action(Keys.BAR[key].code);
             }
         } else if (dragY >= 0 && !dragged) {
-            // A tap on the text brings a scrolled-back view to the present.
+            // A tap on the text is a click for a program that asked for the
+            // mouse -- OpenCode's tabs, say -- and otherwise brings a
+            // scrolled-back view to the present.
+            int row = (y - font.cellHeight()) / font.cellHeight();
+            if (scrollOffset == 0 && terminal != null && row >= 0 && row < rows()
+                    && terminal.mouseClick(x / font.cellWidth(), row)) {
+                dragY = -1;
+                return;
+            }
             toLive();
         }
         dragY = -1;

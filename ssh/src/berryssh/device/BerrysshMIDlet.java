@@ -68,6 +68,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private final Command edit = new Command("Edit", Command.SCREEN, 3);
     private final Command delete = new Command("Delete", Command.SCREEN, 4);
     private final Command settingsCommand = new Command("Settings", Command.SCREEN, 5);
+    private final Command about = new Command("About", Command.SCREEN, 6);
     private final Command quit = new Command("Quit", Command.EXIT, 9);
 
     // The editor
@@ -154,6 +155,9 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private final RecordStoreProfiles store = new RecordStoreProfiles();
     private final RecordStoreSettings settingsStore = new RecordStoreSettings();
     private Settings settings = Settings.defaults();
+    private String badge = "";
+    private final VoiceRecorder recorder = new VoiceRecorder();
+    private volatile boolean transcribing;
     private ListScreen settingsScreen;
 
     private SocketConnection socket;
@@ -202,6 +206,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         connections.addCommand(edit);
         connections.addCommand(delete);
         connections.addCommand(settingsCommand);
+        connections.addCommand(about);
         connections.addCommand(quit);
         try {
             settings = settingsStore.load();
@@ -217,11 +222,13 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             preset = Preset.load();
             if (preset != null) {
                 preset.install(store, hostKeys);
+                badge = preset.badge();
             }
         } catch (IOException e) {
             preset = null;
         }
 
+        connections.setBanner(version() + "  \u00b7  BlackBerry 9900", badge);
         refreshConnections();
         display.setCurrent(connections);
 
@@ -301,6 +308,17 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             }
             if (command == settingsCommand) {
                 showSettings();
+                return;
+            }
+            if (command == about) {
+                Profile first = profiles.length > 0 ? profiles[0] : null;
+                display.setCurrent(new AboutScreen(version(), badge,
+                    first == null ? "" : first.user() + "@" + first.host(),
+                    new AboutScreen.Listener() {
+                        public void closed() {
+                            display.setCurrent(connections);
+                        }
+                    }));
                 return;
             }
             if (command == delete) {
@@ -441,7 +459,148 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             reconnectSession();
         } else if (code == Keys.ACTION_DISCONNECT) {
             disconnectSession();
+        } else if (code == Keys.ACTION_VOICE) {
+            toggleVoice();
         }
+    }
+
+    /**
+     * Voice input: the first press opens the microphone, the second sends what
+     * it heard to the server and types the text at the prompt. It is not
+     * entered: what Whisper heard is worth a look before it runs.
+     */
+    private void toggleVoice() {
+        if (transcribing || current == null || canvas == null) {
+            return;
+        }
+        if (!recorder.recording()) {
+            // Off the event thread: the permission prompt the first recording
+            // raises is shown by the same thread that would be waiting on it.
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        recorder.start();
+                        canvas.setRecording(true);
+                        canvas.setStatus("\u25cf recording - Mic again to send");
+                    } catch (IOException e) {
+                        canvas.setRecording(false);
+                        canvas.setStatus("voice: " + e.getMessage());
+                    }
+                }
+            }).start();
+            return;
+        }
+        final String locator = recorder.locator();
+        final String[] type = new String[1];
+        final byte[] audio;
+        try {
+            audio = recorder.stop(type);
+        } catch (IOException e) {
+            canvas.setRecording(false);
+            canvas.setStatus("voice: " + e.getMessage());
+            return;
+        } finally {
+            canvas.setRecording(false);
+        }
+        transcribing = true;
+        canvas.setStatus("transcribing " + (audio.length / 1024) + " KB...");
+        final Profile profile = current;
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    String text = transcribe(profile, audio, type[0], VoiceFormats.rate(locator));
+                    if (text.length() == 0) {
+                        canvas.setStatus("voice: nothing heard");
+                    } else if (channel != null) {
+                        channel.write(Utf8.encode(text));
+                        canvas.setStatus("voice: " + text.length() + " characters - check, then Enter");
+                    }
+                } catch (IOException e) {
+                    canvas.setStatus("voice: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                } finally {
+                    transcribing = false;
+                }
+            }
+        }).start();
+    }
+
+    /**
+     * Sends a recording to berryssh-transcribe over a connection of its own.
+     *
+     * A second connection rather than a second channel on the session's: the
+     * channel code serves one channel per connection, and a short-lived
+     * connection that cannot touch the terminal is the simpler thing to trust.
+     * It holds the session's host key to the same standard, without asking: a
+     * key that does not match is refused, and one never seen is too.
+     */
+    private String transcribe(Profile profile, byte[] audio, String type, int rate)
+            throws IOException {
+        if (profile.usesWebSocket()) {
+            throw new IOException("voice needs a direct connection, not a bridge");
+        }
+        SocketConnection voiceSocket = openSocket(profile.host(), profile.port());
+        try {
+            Connection voice = new Connection(voiceSocket.openInputStream(),
+                voiceSocket.openOutputStream(), random);
+            HostKey key = voice.handshake();
+            if (KnownHosts.check(hostKeys, profile.hostKeyIdentity(), profile.port(), key)
+                    != KnownHosts.MATCHED) {
+                throw new IOException("the server's key does not match; not sending audio");
+            }
+            UserAuth auth = new UserAuth(voice, profile.user());
+            auth.begin();
+            auth.queryMethods();
+            boolean in = false;
+            if (profile.privateKey().length() > 0) {
+                in = auth.publicKey(OpenSshKey.readEd25519Seed(profile.privateKey())).succeeded();
+            }
+            if (!in && profile.password().length() > 0) {
+                in = auth.password(profile.password()).succeeded();
+            }
+            if (!in) {
+                throw new IOException("could not log in for voice");
+            }
+            Channel job = Channel.openSession(voice);
+            job.requestExec("berryssh-transcribe " + safe(type) + " "
+                + settings.voiceLanguage() + " " + rate);
+            for (int at = 0; at < audio.length; at += 8192) {
+                job.write(audio, at, Math.min(8192, audio.length - at));
+            }
+            job.sendEof();
+            java.io.ByteArrayOutputStream reply = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int n;
+            while ((n = job.read(buffer, 0, buffer.length)) >= 0) {
+                reply.write(buffer, 0, n);
+            }
+            try {
+                job.close();
+            } catch (IOException e) {
+                // Already answered; closing politely is a courtesy.
+            }
+            return VoiceReply.parse(Utf8.decode(reply.toByteArray()));
+        } finally {
+            try {
+                voiceSocket.close();
+            } catch (IOException e) {
+                // Nothing more to say on it.
+            }
+        }
+    }
+
+    /** A content type as one shell word, whatever the device reported. */
+    private static String safe(String type) {
+        if (type == null || type.length() == 0) {
+            return "audio/amr";
+        }
+        char[] out = new char[type.length()];
+        for (int i = 0; i < out.length; i++) {
+            char c = type.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9') || c == '/' || c == '-' || c == '.' || c == '+';
+            out[i] = ok ? c : '_';
+        }
+        return new String(out);
     }
 
     private void showEditor(Profile profile) {
@@ -796,6 +955,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         canvas = new TerminalCanvas(font, settings.theme());
         canvas.setSmoothScroll(settings.smoothScroll());
         canvas.setKeyBar(settings.keyBar());
+        canvas.setBadge(badge);
         canvas.setListener(new TerminalCanvas.Listener() {
             public void action(int code) {
                 sessionAction(code);
@@ -1123,6 +1283,11 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         }).start();
     }
 
+    private String version() {
+        String v = getAppProperty("MIDlet-Version");
+        return v == null ? "" : "v" + v;
+    }
+
     private static BitmapFont loadFont(int index) throws IOException {
         return BitmapFont.load("/fonts/mono" + Profile.CELL_WIDTHS[index] + "x"
             + Profile.CELL_HEIGHTS[index] + ".png",
@@ -1170,7 +1335,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
 
     private static final String[] SETTING_ROWS = {
         "Theme", "Text colour", "Background", "Font size", "Terminal type",
-        "Smooth scroll", "Key bar", "Session" };
+        "Smooth scroll", "Key bar", "Session", "Voice language" };
 
     private void showSettings() {
         if (settingsScreen == null) {
@@ -1200,7 +1365,8 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             settings.terminalType(),
             settings.smoothScroll() ? "On" : "Off",
             settings.keyBar() ? "On" : "Off",
-            settings.tmux() ? "tmux (reconnects to the same one)" : "Plain shell"
+            settings.tmux() ? "tmux (reconnects to the same one)" : "Plain shell",
+            Settings.VOICE_NAMES[settings.voiceIndex()]
         };
         settingsScreen.setRows(SETTING_ROWS, details);
     }
@@ -1234,6 +1400,8 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             settings = settings.withKeyBar(!settings.keyBar());
         } else if (index == 7) {
             settings = settings.withTmux(!settings.tmux());
+        } else if (index == 8) {
+            settings = settings.withVoice((settings.voiceIndex() + 1) % Settings.VOICE_LANGUAGES.length);
         }
         try {
             settingsStore.save(settings);

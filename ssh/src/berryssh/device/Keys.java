@@ -32,6 +32,7 @@ public final class Keys {
     public static final int ACTION_RECONNECT = 6;
     public static final int ACTION_CLOSE = 7;
     public static final int ACTION_BACK = 8;
+    public static final int ACTION_VOICE = 9;
 
     /** One key or action. */
     public static final class Entry {
@@ -87,6 +88,7 @@ public final class Keys {
         key("\u2190", (char) 0, VT320.VK_LEFT),
         key("\u2192", (char) 0, VT320.VK_RIGHT),
         seq("\u21b5", (char) 0, "\r"),
+        action("Mic", (char) 0, ACTION_VOICE),
         action("\u22ef", (char) 0, ACTION_PANEL)
     };
 
@@ -121,7 +123,7 @@ public final class Keys {
         action("Font +", 'f', ACTION_FONT_UP),
         action("Font -", 'v', ACTION_FONT_DOWN),
 
-        key("Home", 'h', VT320.VK_HOME),
+        action("\u25cf Voice", 'm', ACTION_VOICE),
         key("End", 'g', VT320.VK_END),
         action("Reconnect", 'o', ACTION_RECONNECT),
         action("Disconnect", 'q', ACTION_DISCONNECT),

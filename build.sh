@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 
 NAME=berryssh
 VENDOR="berryssh"
-VERSION=0.10.0
+VERSION=0.11.0
 MIDLET_CLASS=berryssh.device.BerrysshMIDlet
 
 OUT=out
@@ -42,7 +42,7 @@ echo "==> compiling (source/target 1.3)"
 # javac's exit status decides this, not the presence of some class file: a
 # partial failure still leaves earlier packages on disk.
 if ! output=$(jdk8 javac -source 1.3 -target 1.3 -nowarn \
-          -bootclasspath lib/cldcapi11.jar:lib/midpapi20.jar \
+          -bootclasspath lib/cldcapi11.jar:lib/midpapi20.jar:lib/mmapi.jar \
           -d classes $(find ssh/src -name '*.java' | tr '\n' ' ') 2>&1); then
     echo "$output" >&2
     echo "the client did not compile under CLDC constraints" >&2
@@ -60,7 +60,7 @@ echo "==> preverifying (CLDC StackMap)"
 rm -rf classes-pv && mkdir -p classes-pv
 java -cp lib/proguard.jar proguard.ProGuard \
     -injars classes -outjars classes-pv \
-    -libraryjars lib/cldcapi11.jar -libraryjars lib/midpapi20.jar \
+    -libraryjars lib/cldcapi11.jar -libraryjars lib/midpapi20.jar -libraryjars lib/mmapi.jar \
     -dontshrink -dontobfuscate -dontoptimize -microedition \
     -keep 'public class * extends javax.microedition.midlet.MIDlet' \
     > "$OUT/proguard.log" 2>&1

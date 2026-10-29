@@ -190,6 +190,8 @@ public abstract class VT320 {
 	boolean capslock = false;
 	boolean numlock = false;
 	int mouserpt = 0;
+	/** DECSET 1006: mouse reports as CSI < b;x;y M, not as raw bytes. */
+	boolean mouseSgr = false;
 	byte mousebut = 0;
 	int lastwaslf = 0;
 	public int numScrollbackLines = 0;
@@ -324,6 +326,14 @@ public abstract class VT320 {
 	private final static int TSTATE_VT52X = 14;
 	private final static int TSTATE_VT52Y = 15;
 	private final static int TSTATE_CSI_TICKS = 16;
+	/**
+	 * A control sequence this terminal does not act on, swallowed up to its
+	 * final byte. tmux and modern TUIs ask the terminal things on start-up --
+	 * DA2 (CSI > c), DECRQM (CSI ? Ps $ p), the cursor shape (CSI Ps SP q), the
+	 * kitty keyboard (CSI > 1 u) -- and anything left half-parsed is printed,
+	 * which is the garbage at the edge of a freshly opened program.
+	 */
+	private final static int TSTATE_CSI_IGNORE = 17;
 	/*
 	 * The graphics charsets B - default ASCII A - ISO Latin 1 0 - DEC SPECIAL <
 	 * - User defined ....
@@ -353,6 +363,8 @@ public abstract class VT320 {
 	/** The list of integers as used by CSI */
 	private int[] DCEvars = new int[30];
 	private int DCEvar;
+	/** The last character drawn, for REP (CSI Ps b), which tmux uses. */
+	private char lastPrinted = ' ';
 	private int writeBufferIndex = 0;
 
 	private byte[] writeBuffer = new byte[256];
@@ -719,6 +731,49 @@ public abstract class VT320 {
 	 * @param s
 	 *            the string to be sent
 	 */
+	/** Whether the program on screen has asked to hear about the mouse. */
+	public boolean mouseReporting() {
+		return mouserpt != 0;
+	}
+
+	/**
+	 * A tap, reported as a left click at a cell (zero-based), the way xterm
+	 * reports one: press and release. Returns false when nobody asked.
+	 */
+	public boolean mouseClick(int column, int row) {
+		if (mouserpt == 0) {
+			return false;
+		}
+		sendMouse(0, column, row, true);
+		sendMouse(0, column, row, false);
+		return true;
+	}
+
+	/** A wheel step at a cell: up when up is true. Returns false when nobody asked. */
+	public boolean mouseWheel(int column, int row, boolean up) {
+		if (mouserpt == 0 || mouserpt == 9) {
+			return false;
+		}
+		sendMouse(up ? 64 : 65, column, row, true);
+		return true;
+	}
+
+	private void sendMouse(int button, int column, int row, boolean press) {
+		int x = column + 1;
+		int y = row + 1;
+		if (mouseSgr) {
+			sendSequence("\u001b[<" + button + ";" + x + ";" + y + (press ? "M" : "m"));
+			return;
+		}
+		// The original encoding: a byte each, offset by 32, so it cannot
+		// describe a cell past 223. A release is button 3.
+		int b = press ? button : 3;
+		if (x > 223 || y > 223) {
+			return;
+		}
+		sendSequence("\u001b[M" + (char) (32 + b) + (char) (32 + x) + (char) (32 + y));
+	}
+
 	/**
 	 * Sends a whole key sequence, Shift-Tab's ESC [ Z for one, in a single
 	 * write. Typed a character at a time it can reach the far end in two
@@ -1223,6 +1278,7 @@ public abstract class VT320 {
 				} else {
 					putChar(COLUMN, ROW, c, attributes);
 				}
+				lastPrinted = c;
 				COLUMN++;
 				break; // TSTATE_DATA
 
@@ -1235,7 +1291,7 @@ public abstract class VT320 {
 					break;
 				}
 				// but check for vt102 ESC \
-				if (c == '\\' && osc.charAt(osc.length() - 1) == ESC) {
+				if (c == '\\' && osc.length() > 0 && osc.charAt(osc.length() - 1) == ESC) {
 					// handle_osc( osc );
 					setTermState(TSTATE_DATA);
 					break;
@@ -1281,6 +1337,10 @@ public abstract class VT320 {
 					setTermState(TSTATE_OSC);
 					break;
 				case 'P':
+				case '_': // APC: the kitty graphics query arrives as one
+				case '^': // PM
+				case 'X': // SOS
+					// Strings to ESC \, none of which this terminal acts on.
 					dcs = "";
 					setTermState(TSTATE_DCS);
 					break;
@@ -1485,7 +1545,7 @@ public abstract class VT320 {
 				setTermState(TSTATE_DATA);
 				break;
 			case TSTATE_DCS:
-				if (c == '\\' && dcs.charAt(dcs.length() - 1) == ESC) {
+				if (c == '\\' && dcs.length() > 0 && dcs.charAt(dcs.length() - 1) == ESC) {
 					// handle_dcs( dcs );
 					setTermState(TSTATE_DATA);
 					break;
@@ -1495,6 +1555,11 @@ public abstract class VT320 {
 
 			case TSTATE_DCEQ:
 				setTermState(TSTATE_DATA);
+				if (c >= 0x20 && c <= 0x2f) {
+					// DECRQM (CSI ? Ps $ p) and the like: a question, not a mode.
+					setTermState(TSTATE_CSI_IGNORE);
+					break;
+				}
 				switch (c) {
 				case '0':
 				case '1':
@@ -1580,6 +1645,9 @@ public abstract class VT320 {
 						case 1003:
 							mouserpt = DCEvars[i];
 							break;
+						case 1006:
+							mouseSgr = true;
+							break;
 
 						/* unimplemented stuff, fall through */
 						/* 4 - scrolling mode, smooth */
@@ -1664,6 +1732,9 @@ public abstract class VT320 {
 						case 1003:
 							mouserpt = 0;
 							break;
+						case 1006:
+							mouseSgr = false;
+							break;
 						default:
 							break;
 						}
@@ -1732,9 +1803,41 @@ public abstract class VT320 {
 					break;
 				}
 				break;
+			case TSTATE_CSI_IGNORE:
+				if (c >= 0x40 && c <= 0x7e) {
+					setTermState(TSTATE_DATA);
+				}
+				break;
 			case TSTATE_CSI:
 				setTermState(TSTATE_DATA);
 				switch (c) {
+				case '>':
+				case '<':
+				case '=':
+				case ' ':
+				case '#':
+				case '%':
+				case '&':
+				case '*':
+				case '+':
+					setTermState(TSTATE_CSI_IGNORE);
+					break;
+				case ':':
+					// ITU colour form, 38:5:208: read as 38;5;208.
+					DCEvar++;
+					DCEvars[DCEvar] = 0;
+					setTermState(TSTATE_CSI);
+					break;
+				case 'b': { // REP: the last character again, Ps times
+					int n = DCEvars[0] < 1 ? 1 : DCEvars[0];
+					if (n > columns * rows) {
+						n = columns * rows;
+					}
+					for (int r = 0; r < n; r++) {
+						putChar(lastPrinted, false);
+					}
+					break;
+				}
 				case '"':
 					setTermState(TSTATE_CSI_TICKS);
 					break;
