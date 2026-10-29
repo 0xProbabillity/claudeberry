@@ -515,7 +515,8 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             canvas.setRecording(false);
         }
         transcribing = true;
-        canvas.setStatus("transcribing " + (audio.length / 1024) + " KB...");
+        canvas.setTranscribing(true);
+        canvas.setStatus("voice: connecting...");
         final Profile profile = current;
         new Thread(new Runnable() {
             public void run() {
@@ -531,9 +532,15 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
                     canvas.setStatus("voice: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
                 } finally {
                     transcribing = false;
+                    canvas.setTranscribing(false);
                 }
             }
         }).start();
+    }
+
+    /** A size for the status line: "12 KB", or bytes under one. */
+    private static String kilobytes(int bytes) {
+        return bytes < 1024 ? bytes + " bytes" : (bytes / 1024) + " KB";
     }
 
     /**
@@ -575,6 +582,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             if (!in) {
                 throw new IOException("could not log in for voice");
             }
+            canvas.setStatus("voice: sending " + kilobytes(audio.length) + "...");
             Channel job = Channel.openSession(voice);
             job.requestExec("berryssh-transcribe " + safe(type) + " "
                 + settings.voiceLanguage(voiceLanguages) + " " + rate);
@@ -582,6 +590,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
                 job.write(audio, at, Math.min(8192, audio.length - at));
             }
             job.sendEof();
+            canvas.setStatus("voice: transcribing...");
             java.io.ByteArrayOutputStream reply = new java.io.ByteArrayOutputStream();
             byte[] buffer = new byte[1024];
             int n;

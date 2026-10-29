@@ -19,7 +19,7 @@ import berryssh.terminal.VT320;
  *
  * Host-only tool. Compile against the client classes:
  *
- *   java -cp <classes> RenderCapture capture.bin out.png 80 31 [theme] [font] [bar|panel|symbols|voice]
+ *   java -cp <classes> RenderCapture capture.bin out.png 80 31 [theme] [font] [bar|panel|symbols|voice|transcribing]
  *   java -Dstatus="[blackberry] me@box" -cp <classes> RenderCapture ...
  *
  * theme is an index into Theme.ALL, font a Profile font index.
@@ -119,9 +119,11 @@ public final class RenderCapture {
                 int x0 = i * width / Keys.BAR.length;
                 int x1 = (i + 1) * width / Keys.BAR.length;
                 boolean action = Keys.BAR[i].kind == Keys.ACTION;
-                boolean recording = overlay.equals("voice") && action
-                    && Keys.BAR[i].code == Keys.ACTION_VOICE;
-                boolean lit = recording || (overlay.equals("panel") || overlay.equals("symbols"))
+                boolean mic = action && Keys.BAR[i].code == Keys.ACTION_VOICE;
+                boolean recording = overlay.equals("voice") && mic;
+                boolean working = overlay.equals("transcribing") && mic;
+                boolean lit = recording || working
+                    || (overlay.equals("panel") || overlay.equals("symbols"))
                     && action && Keys.BAR[i].code == Keys.ACTION_PANEL;
                 int face = !lit ? theme.statusBar() : recording ? 0xd04040 : theme.colour(13);
                 if (lit) {
@@ -130,13 +132,18 @@ public final class RenderCapture {
                 if (i > 0) {
                     fill(out, x0, top + 6, 1, bar - 13, theme.dim(theme.statusText()));
                 }
-                String label = Keys.BAR[i].label;
+                String label = recording ? "\u25cf 4s" : working ? "/ 3s" : Keys.BAR[i].label;
                 int x = x0 + (x1 - x0 - label.length() * cw) / 2;
                 for (int c = 0; c < label.length(); c++) {
                     glyph(out, atlas, atlasColumns, cw, ch, label.charAt(c), x + c * cw,
                         top + (bar - ch) / 2, lit ? theme.background() : theme.foreground(), face);
                 }
             }
+        }
+        if (bar > 0 && overlay.equals("transcribing")) {
+            // The sweeping stripe, caught a third of the way along.
+            int width = out.getWidth();
+            fill(out, width / 4, out.getHeight() - bar, width / 3, 3, theme.colour(13));
         }
         ImageIO.write(out, "png", new File(args[1]));
     }

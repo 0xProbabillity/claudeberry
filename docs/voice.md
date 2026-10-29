@@ -6,8 +6,9 @@ terminal, and you press Enter when they look right. Speech recognition runs on *
 models: no cloud service, no API key, no account.
 
 <p align="center">
-  <img src="images/voice.png" width="49%" alt="Recording: the Mic key on the key bar is lit red">
-  <img src="images/voice-done.png" width="49%" alt="A few seconds later the transcribed prompt is at Claude Code's input line, waiting for Enter">
+  <img src="images/voice.png" width="32%" alt="Recording: the Mic key on the key bar is lit red">
+  <img src="images/transcribing.png" width="32%" alt="Transcribing: the Mic key is orange with a spinner and the seconds, a stripe sweeps along the key bar and the status line says transcribing">
+  <img src="images/voice-done.png" width="32%" alt="A few seconds later the transcribed prompt is at Claude Code's input line, waiting for Enter">
 </p>
 
 - [Install the server half](#install-the-server-half)
@@ -65,11 +66,12 @@ in as) and takes a minute. After that, a phrase takes a few seconds.
 
 ## Use it
 
-1. Tap **Mic** on the key bar (or open the quick panel with `⋯` and press `M`). The key turns red: the phone is
-   recording. The first time, BlackBerry asks for permission to record; allow it.
+1. Tap **Mic** on the key bar (or open the quick panel with `⋯` and press `M`). The key turns red and counts
+   the seconds: the phone is recording. The first time, BlackBerry asks for permission to record; allow it.
 2. Say your prompt.
-3. Tap **Mic** again. After about 5 seconds (10–15 s if it has not been used for a while) the text appears at the
-   prompt.
+3. Tap **Mic** again. The key turns orange with a spinner, a stripe sweeps along the top of the key bar, and the
+   status line says what is happening: `connecting`, `sending 12 KB`, `transcribing`, with the seconds. After
+   about 5 seconds (10–15 s if it has not been used for a while) the text appears at the prompt.
 4. Read it, fix it if needed, press **Enter**.
 
 Enter is never pressed for you, so a misheard word cannot reach Claude by itself.

@@ -37,7 +37,24 @@ public final class TerminalCanvas extends Canvas {
     private Keyboard keyboard;
     private String status = "";
     private String badge = "";
-    private boolean recording;
+    private volatile boolean recording;
+
+    /**
+     * While the server works on a recording: the Mic key turns orange with a
+     * spinner and the seconds, a stripe sweeps along the top of the key bar,
+     * and the status line counts. Without them a tap on Mic looked as if it
+     * had done nothing until the text arrived.
+     */
+    private volatile boolean transcribing;
+
+    /** When the current recording or transcription began, for the seconds. */
+    private long voiceSince;
+
+    /** Spinner frames, from characters every atlas has. */
+    private static final String SPINNER = "|/-\\";
+
+    /** How often the voice indicators move. */
+    private static final int VOICE_FRAME_MS = 125;
 
     /** Rows above the live screen currently being looked at. Zero is live. */
     private int scrollOffset;
@@ -125,7 +142,70 @@ public final class TerminalCanvas extends Canvas {
     /** Lights the Mic key while the microphone is open. */
     public void setRecording(boolean on) {
         recording = on;
+        voiceChanged();
+    }
+
+    /** Shows that a recording is with the server and the answer is awaited. */
+    public void setTranscribing(boolean on) {
+        transcribing = on;
+        voiceChanged();
+    }
+
+    private void voiceChanged() {
+        voiceSince = System.currentTimeMillis();
         repaint();
+        if (recording || transcribing) {
+            animateVoice();
+        }
+    }
+
+    /** One thread at a time moves the indicators, and it stops with them. */
+    private Thread voiceAnimation;
+
+    private synchronized void animateVoice() {
+        if (voiceAnimation != null) {
+            return;
+        }
+        voiceAnimation = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    while (recording || transcribing) {
+                        Thread.sleep(VOICE_FRAME_MS);
+                        repaintVoice();
+                    }
+                } catch (InterruptedException e) {
+                    // Stop moving; the next state change starts it again.
+                } finally {
+                    synchronized (TerminalCanvas.this) {
+                        voiceAnimation = null;
+                    }
+                    repaint();
+                }
+            }
+        });
+        voiceAnimation.start();
+    }
+
+    /** Only the status line and the key bar change from frame to frame. */
+    private void repaintVoice() {
+        int width = getWidth();
+        int height = getHeight();
+        repaint(0, 0, width, font.cellHeight());
+        int bar = barHeight();
+        if (bar > 0) {
+            repaint(0, height - bar, width, bar);
+        }
+    }
+
+    /** Whole seconds since the current voice state began. */
+    private int voiceSeconds() {
+        return (int) ((System.currentTimeMillis() - voiceSince) / 1000);
+    }
+
+    /** The spinner's frame for now. */
+    private char spinnerFrame() {
+        long frame = System.currentTimeMillis() / VOICE_FRAME_MS;
+        return SPINNER.charAt((int) (frame % SPINNER.length()));
     }
 
     public void setSmoothScroll(boolean on) {
@@ -548,6 +628,11 @@ public final class TerminalCanvas extends Canvas {
         if (scrollOffset > 0) {
             line = "-" + scrollOffset + " " + line;
         }
+        if (transcribing && !showKeyCodes) {
+            line = spinnerFrame() + " " + line + " " + voiceSeconds() + "s";
+        } else if (recording && !showKeyCodes) {
+            line = line + " " + voiceSeconds() + "s";
+        }
         line = "[blackberry] " + line;
         g.setColor(theme.statusBar());
         g.fillRect(0, 0, width, cellHeight);
@@ -587,14 +672,14 @@ public final class TerminalCanvas extends Canvas {
         for (int i = 0; i < n; i++) {
             int x0 = i * width / n;
             int x1 = (i + 1) * width / n;
+            boolean mic = Keys.BAR[i].code == Keys.ACTION_VOICE && Keys.BAR[i].kind == Keys.ACTION;
             boolean lit = i == pressedKey
                 || (Keys.BAR[i].kind == Keys.CONTROL && keyboard != null && keyboard.controlPending())
                 || (Keys.BAR[i].code == Keys.ACTION_PANEL && Keys.BAR[i].kind == Keys.ACTION
                     && panel != null)
-                || (Keys.BAR[i].code == Keys.ACTION_VOICE && Keys.BAR[i].kind == Keys.ACTION
-                    && recording);
+                || (mic && (recording || transcribing));
             int face = !lit ? theme.statusBar()
-                : (recording && Keys.BAR[i].code == Keys.ACTION_VOICE ? 0xd04040 : theme.colour(13));
+                : (recording && mic ? 0xd04040 : theme.colour(13));
             int text = lit ? theme.background() : theme.foreground();
             if (lit) {
                 g.setColor(face);
@@ -605,6 +690,11 @@ public final class TerminalCanvas extends Canvas {
                 g.drawLine(x0, top + 6, x0, top + bar - 7);
             }
             String label = Keys.BAR[i].label;
+            if (mic && recording) {
+                label = "\u25cf " + voiceSeconds() + "s";
+            } else if (mic && transcribing) {
+                label = spinnerFrame() + " " + voiceSeconds() + "s";
+            }
             int labelWidth = label.length() * font.cellWidth();
             int x = x0 + (x1 - x0 - labelWidth) / 2;
             int y = top + (bar - font.cellHeight()) / 2;
@@ -615,6 +705,16 @@ public final class TerminalCanvas extends Canvas {
         }
         g.setColor(theme.dim(theme.statusText()));
         g.drawLine(0, top, width, top);
+        if (transcribing) {
+            // A stripe a third of the width sweeping along the top edge, back
+            // and forth: the server is working.
+            int stripe = width / 3;
+            long t = System.currentTimeMillis() % 1600;
+            int travel = width - stripe;
+            int x = (int) (t < 800 ? travel * t / 800 : travel * (1600 - t) / 800);
+            g.setColor(theme.colour(13));
+            g.fillRect(x, top, stripe, 3);
+        }
     }
 
     /** Which bar key is under this point, or -1. */

@@ -89,9 +89,10 @@ screen; include it in a bug report.
 
 ## Voice
 
-1. Tap **Mic** (or panel → `M`). It turns **red**: recording.
+1. Tap **Mic** (or panel → `M`). It turns **red** and counts seconds: recording.
 2. Speak your prompt, in English.
-3. Tap **Mic** again. After ~5 s the text is at the prompt.
+3. Tap **Mic** again. It turns **orange with a spinner** while the server transcribes; the status line shows the
+   stage. After ~5 s the text is at the prompt.
 4. Check it, press **Enter**. Enter is never pressed for you.
 
 Server setup: [voice.md](voice.md).
