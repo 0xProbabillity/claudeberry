@@ -56,33 +56,30 @@ public final class Chrome {
     }
 
     /**
-     * The home screen's header: the creature on the left and, beside it, the
+     * The home screen's header: the berry on the left and, beside it, the
      * name, a line under it and the badge, each on a line of its own so a long
      * handle never runs into the name. Returns the y the content starts at.
      */
     public static int drawBanner(Graphics g, int width, String name, String subtitle,
                                  String badge) {
-        int qw = 4;
-        int qh = 7;
+        int scale = 2;
         Font big = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD, Font.SIZE_LARGE);
         boolean hasBadge = badge != null && badge.length() > 0;
         int text = big.getHeight() + detail().getHeight()
             + (hasBadge ? label().getHeight() + PADDING / 2 : 0);
-        int inner = Math.max(Mascot.height(qh), text);
+        int inner = Math.max(Berry.height(scale), text);
         int height = inner + PADDING * 5;
 
         g.setColor(BAR);
         g.fillRect(0, 0, width, height);
         g.setColor(ACCENT);
         g.fillRect(0, height - 2, width, 2);
-        Mascot.draw(g, PADDING * 3, (height - 2 - Mascot.height(qh)) / 2, qw, qh);
+        Berry.draw(g, PADDING * 3, (height - 2 - Berry.height(scale)) / 2, scale, BAR);
 
-        int x = PADDING * 6 + Mascot.width(qw);
+        int x = PADDING * 5 + Berry.width(scale);
         int room = width - x - PADDING * 2;
         int y = (height - 2 - text) / 2;
-        g.setColor(TEXT);
-        g.setFont(big);
-        g.drawString(clip(name, big, room), x, y, Graphics.TOP | Graphics.LEFT);
+        drawName(g, big, clip(name, big, room), x, y, Graphics.TOP | Graphics.LEFT);
         y += big.getHeight();
         g.setColor(MUTED);
         g.setFont(detail());
@@ -94,6 +91,24 @@ public final class Chrome {
             g.drawString(clip(badge, label(), room), x, y, Graphics.TOP | Graphics.LEFT);
         }
         return height;
+    }
+
+    /**
+     * The name in the logo's two colours: "Claude" in the text colour and
+     * "Berry" in the accent. Any other name is drawn plainly.
+     */
+    public static void drawName(Graphics g, Font font, String name, int x, int y, int anchor) {
+        int split = name.endsWith("Berry") ? name.length() - 5 : name.length();
+        String first = name.substring(0, split);
+        String second = name.substring(split);
+        if ((anchor & Graphics.HCENTER) != 0) {
+            x -= font.stringWidth(name) / 2;
+        }
+        g.setFont(font);
+        g.setColor(TEXT);
+        g.drawString(first, x, y, Graphics.TOP | Graphics.LEFT);
+        g.setColor(ACCENT);
+        g.drawString(second, x + font.stringWidth(first), y, Graphics.TOP | Graphics.LEFT);
     }
 
     /** Draws the top bar and returns the y the content starts at. */

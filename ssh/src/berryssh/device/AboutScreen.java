@@ -22,7 +22,7 @@ public final class AboutScreen extends Canvas {
     private final Listener listener;
 
     private static final String[] CREDITS = {
-        "SSH: berryssh by cobanov, GPL-2.0",
+        "Built on berryssh by cobanov, GPL-2.0",
         "Terminal: VT320 from JTA, via BBSSH",
         "Font: DejaVu Sans Mono",
         "Voice: Whisper, on your own server"
@@ -42,15 +42,16 @@ public final class AboutScreen extends Canvas {
         g.setColor(Chrome.BACKGROUND);
         g.fillRect(0, 0, width, height);
 
-        int qw = 7;
-        int qh = 12;
+        int scale = 4;
         int y = Chrome.PADDING * 3;
-        Mascot.draw(g, (width - Mascot.width(qw)) / 2, y, qw, qh);
-        y += Mascot.height(qh) + Chrome.PADDING * 3;
+        Berry.draw(g, (width - Berry.width(scale)) / 2, y, scale, Chrome.BACKGROUND);
+        y += Berry.height(scale) + Chrome.PADDING * 3;
 
         Font big = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD, Font.SIZE_LARGE);
-        y = centred(g, big, Chrome.TEXT, "berryssh " + version, width, y);
-        y = centred(g, Chrome.detail(), Chrome.MUTED, "SSH and Claude Code on a BlackBerry 9900", width, y);
+        Chrome.drawName(g, big, "ClaudeBerry", width / 2, y, Graphics.TOP | Graphics.HCENTER);
+        y += big.getHeight();
+        y = centred(g, Chrome.detail(), Chrome.MUTED, version, width, y);
+        y = centred(g, Chrome.detail(), Chrome.MUTED, "SSH and Claude Code on a BlackBerry", width, y);
         y += Chrome.PADDING;
         if (badge.length() > 0) {
             y = centred(g, Chrome.label(), Chrome.ACCENT, badge, width, y);

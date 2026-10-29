@@ -203,7 +203,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             }
         }).start();
 
-        connections = new ListScreen("berryssh", new ListScreen.Listener() {
+        connections = new ListScreen("ClaudeBerry", new ListScreen.Listener() {
             public void selected(int index) {
                 open(index);
             }
@@ -1250,7 +1250,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     }
 
     private void show(String message, AlertType type, Displayable next) {
-        Alert alert = new Alert("berryssh", message, null, type);
+        Alert alert = new Alert("ClaudeBerry", message, null, type);
         alert.setTimeout(Alert.FOREVER);
         display.setCurrent(alert, next);
     }

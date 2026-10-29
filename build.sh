@@ -1,34 +1,39 @@
 #!/usr/bin/env bash
-# Build the berryssh MIDlet: javac (JDK 8, targeting 1.3) -> preverify -> jar -> jad.
+# Build the ClaudeBerry MIDlet: javac (JDK 8, targeting 1.3) -> preverify -> jar -> jad.
 #
-# Compiles in a container because CLDC 1.1 wants class file version 47 and the
-# host JDK cannot emit anything that old. The API stubs are microemu's
+# Compiles with JDK 8 (local, or in a container) because CLDC 1.1 wants class
+# file version 47 and a newer JDK cannot emit anything that old. The API stubs are microemu's
 # repackaged cldcapi11/midpapi20, so no BlackBerry JDE is involved anywhere —
 # and since nothing here touches a RIM API, the result needs no code signature.
 #
-#   ./build.sh            -> out/berryssh.jar + out/berryssh.jad
-#   tools/ota_server.py out
+#   ./build.sh            -> out/claudeberry.jar + out/claudeberry.jad
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-NAME=berryssh
-VENDOR="berryssh"
-VERSION=0.11.2
+# The name the handset shows; the jar and descriptor are named in lower case.
+# The code underneath is berryssh's, so its package keeps that name.
+NAME=ClaudeBerry
+FILE=claudeberry
+VENDOR="ClaudeBerry"
+VERSION=0.12.0
 MIDLET_CLASS=berryssh.device.BerrysshMIDlet
 
 OUT=out
-JAR="$OUT/$NAME.jar"
-JAD="$OUT/$NAME.jad"
+JAR="$OUT/$FILE.jar"
+JAD="$OUT/$FILE.jad"
 
 # JDK 8 is the newest javac that still emits class file version 47. Set
-# JAVA8_HOME to use a local one; otherwise it runs in a container, on
-# OrbStack's socket, with a throwaway docker config so the host's broken Docker
-# Desktop credential helper is not consulted.
+# JAVA8_HOME to use a local one; otherwise it runs in a container, with a
+# throwaway docker config so a Docker Desktop credential helper is not
+# consulted.
 if [ -n "${JAVA8_HOME:-}" ]; then
     jdk8() { "$JAVA8_HOME/bin/$1" "${@:2}"; }
 else
-    export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.orbstack/run/docker.sock}"
+    # OrbStack's socket when it is there and nothing else was asked for.
+    if [ -z "${DOCKER_HOST:-}" ] && [ -S "$HOME/.orbstack/run/docker.sock" ]; then
+        export DOCKER_HOST="unix://$HOME/.orbstack/run/docker.sock"
+    fi
     DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
     printf '{}' > "$DOCKER_CONFIG/config.json"
     trap 'rm -rf "$DOCKER_CONFIG"' EXIT
@@ -94,7 +99,7 @@ MIDlet-Vendor: $VENDOR
 MIDlet-1: $NAME,/icon.png,$MIDLET_CLASS
 MicroEdition-Profile: MIDP-2.0
 MicroEdition-Configuration: CLDC-1.1
-MIDlet-Jar-URL: $NAME.jar
+MIDlet-Jar-URL: $FILE.jar
 MIDlet-Jar-Size: $JAR_SIZE
 EOF
 
