@@ -14,19 +14,26 @@ cd "$(dirname "$0")"
 
 NAME=berryssh
 VENDOR="berryssh"
-VERSION=0.8.1
+VERSION=0.10.0
 MIDLET_CLASS=berryssh.device.BerrysshMIDlet
 
 OUT=out
 JAR="$OUT/$NAME.jar"
 JAD="$OUT/$NAME.jad"
 
-# OrbStack's socket, and a throwaway docker config so the host's broken Docker
+# JDK 8 is the newest javac that still emits class file version 47. Set
+# JAVA8_HOME to use a local one; otherwise it runs in a container, on
+# OrbStack's socket, with a throwaway docker config so the host's broken Docker
 # Desktop credential helper is not consulted.
-export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.orbstack/run/docker.sock}"
-DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
-printf '{}' > "$DOCKER_CONFIG/config.json"
-trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+if [ -n "${JAVA8_HOME:-}" ]; then
+    jdk8() { "$JAVA8_HOME/bin/$1" "${@:2}"; }
+else
+    export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.orbstack/run/docker.sock}"
+    DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
+    printf '{}' > "$DOCKER_CONFIG/config.json"
+    trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+    jdk8() { docker run --rm -v "$PWD:/work" -w /work eclipse-temurin:8-jdk "$@"; }
+fi
 
 rm -rf "$OUT" classes classes-pv
 mkdir -p "$OUT" classes
@@ -34,11 +41,8 @@ mkdir -p "$OUT" classes
 echo "==> compiling (source/target 1.3)"
 # javac's exit status decides this, not the presence of some class file: a
 # partial failure still leaves earlier packages on disk.
-if ! output=$(docker run --rm \
-    -v "$PWD:/work" -v "$PWD/lib:/libs:ro" -w /work \
-    eclipse-temurin:8-jdk \
-    javac -source 1.3 -target 1.3 -nowarn \
-          -bootclasspath /libs/cldcapi11.jar:/libs/midpapi20.jar \
+if ! output=$(jdk8 javac -source 1.3 -target 1.3 -nowarn \
+          -bootclasspath lib/cldcapi11.jar:lib/midpapi20.jar \
           -d classes $(find ssh/src -name '*.java' | tr '\n' ' ') 2>&1); then
     echo "$output" >&2
     echo "the client did not compile under CLDC constraints" >&2
@@ -47,8 +51,7 @@ fi
 echo "$output" | grep -v 'obsolete\|deprecat\|warning' || true
 
 echo "==> class file version"
-docker run --rm -v "$PWD:/work" -w /work eclipse-temurin:8-jdk \
-    javap -verbose -cp classes "$MIDLET_CLASS" 2>/dev/null | grep -m1 'major version' || true
+jdk8 javap -verbose -cp classes "$MIDLET_CLASS" 2>/dev/null | grep -m1 'major version' || true
 
 # CLDC's verifier needs StackMap attributes baked in ahead of time; without them
 # the device rejects the suite with "907 Invalid JAR / missing stack map".
@@ -72,14 +75,13 @@ cat > "$OUT/manifest.mf" <<EOF
 MIDlet-Name: $NAME
 MIDlet-Version: $VERSION
 MIDlet-Vendor: $VENDOR
-MIDlet-1: $NAME,,$MIDLET_CLASS
+MIDlet-1: $NAME,/icon.png,$MIDLET_CLASS
 MicroEdition-Profile: MIDP-2.0
 MicroEdition-Configuration: CLDC-1.1
 EOF
 
 # The font atlases ride in the jar and are loaded with getResourceAsStream.
-docker run --rm -v "$PWD:/work" -w /work eclipse-temurin:8-jdk \
-    jar cfm "$JAR" "$OUT/manifest.mf" -C classes-pv . -C ssh/res .
+jdk8 jar cfm "$JAR" "$OUT/manifest.mf" -C classes-pv . -C ssh/res .
 
 JAR_SIZE=$(stat -f%z "$JAR" 2>/dev/null || stat -c%s "$JAR")
 
@@ -89,7 +91,7 @@ cat > "$JAD" <<EOF
 MIDlet-Name: $NAME
 MIDlet-Version: $VERSION
 MIDlet-Vendor: $VENDOR
-MIDlet-1: $NAME,,$MIDLET_CLASS
+MIDlet-1: $NAME,/icon.png,$MIDLET_CLASS
 MicroEdition-Profile: MIDP-2.0
 MicroEdition-Configuration: CLDC-1.1
 MIDlet-Jar-URL: $NAME.jar

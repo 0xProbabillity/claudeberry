@@ -128,6 +128,41 @@ public final class Utf8 {
         return new String(out, 0, at);
     }
 
+    /**
+     * How many of these bytes end on a character boundary.
+     *
+     * A read from the network ends wherever the packet did, which is often in
+     * the middle of a three-byte box-drawing character. Decoding that tail
+     * alone gives a replacement character, and the rest of it arriving in the
+     * next read gives two more — so the tail is held back and decoded with
+     * what follows it.
+     */
+    public static int completeLength(byte[] b, int offset, int length) {
+        int end = offset + length;
+        int start = end - 1;
+        int floor = end - 4 < offset ? offset : end - 4;
+        while (start >= floor && (b[start] & 0xc0) == 0x80) {
+            start--;
+        }
+        if (start < floor) {
+            return length;
+        }
+        int c = b[start] & 0xff;
+        int size;
+        if (c < 0x80) {
+            size = 1;
+        } else if ((c & 0xe0) == 0xc0) {
+            size = 2;
+        } else if ((c & 0xf0) == 0xe0) {
+            size = 3;
+        } else if ((c & 0xf8) == 0xf0) {
+            size = 4;
+        } else {
+            return length;
+        }
+        return start + size > end ? start - offset : length;
+    }
+
     public static String decode(byte[] b) {
         return decode(b, 0, b.length);
     }

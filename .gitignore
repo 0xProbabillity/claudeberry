@@ -16,3 +16,6 @@ lib/*.jar
 
 # Fetched to generate the font atlases; not redistributed here
 /lib/fonts/
+
+# A preset carries a private key; see tools/make_preset.sh
+/ssh/res/preset/

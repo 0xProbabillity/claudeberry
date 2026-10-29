@@ -1,4 +1,7 @@
+import berryssh.device.Preset;
 import berryssh.device.Profile;
+import berryssh.device.Settings;
+import berryssh.device.Theme;
 import berryssh.protocol.Ascii;
 import berryssh.protocol.Base64;
 import berryssh.protocol.BridgeAuth;
@@ -19,7 +22,9 @@ import berryssh.protocol.WireWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Transport-layer vectors: the RFC 4251 section 5 wire types and the RFC 4253
@@ -62,8 +67,11 @@ public class TransportTests {
         packetCipherVectors();
         encryptedFraming();
         utf8Vectors();
+        utf8AcrossReads();
         knownHostsPolicy();
         savedConnections();
+        presets();
+        lookAndFeel();
         opensshPrivateKeys();
         bridgeHandshake();
 
@@ -777,6 +785,153 @@ public class TransportTests {
                                  String password, boolean savePassword) {
         return new Profile(name, host, port, user, password, savePassword,
             "", 0, "", "", "");
+    }
+
+    /** Network reads end mid-character; the session holds the tail back. */
+    private static void utf8AcrossReads() {
+        byte[] line = Utf8.encode("a\u2500\u25cf");   // a, box line, Claude's dot
+        checkTrue("a whole buffer is complete", Utf8.completeLength(line, 0, line.length) == 7);
+        checkTrue("one byte into a three-byte character is held back",
+            Utf8.completeLength(line, 0, 5) == 4);
+        checkTrue("two bytes into it as well", Utf8.completeLength(line, 0, 6) == 4);
+        checkTrue("ASCII is never held back", Utf8.completeLength(line, 0, 1) == 1);
+        checkTrue("an offset is honoured", Utf8.completeLength(line, 1, 4) == 3);
+
+        // Every split point of a longer string decodes to the original once
+        // the tail is carried, which is what the session loop does.
+        String text = "\u256d\u2500\u2500 \u276f \u00e7\u011f \u23bf done \u2733";
+        byte[] all = Utf8.encode(text);
+        boolean every = true;
+        for (int cut = 0; cut <= all.length; cut++) {
+            int complete = Utf8.completeLength(all, 0, cut);
+            String first = Utf8.decode(all, 0, complete);
+            String rest = Utf8.decode(all, complete, all.length - complete);
+            if (!text.equals(first + rest)) {
+                every = false;
+            }
+        }
+        checkTrue("every split point decodes cleanly with the tail carried", every);
+    }
+
+    /** Themes and the settings that pick them. */
+    private static void lookAndFeel() {
+        Theme claude = Theme.CLAUDE;
+        checkTrue("the first sixteen colours are the theme's", claude.colour(13) == 0xd99b7d);
+        checkTrue("the cube is xterm's", Theme.CLASSIC.colour(173) == 0xd7875f && claude.colour(16) == 0);
+        checkTrue("Claude's orange is exact in its own theme",
+            claude.colour(173) == 0xd97757 && claude.colour(174) == 0xd97757);
+        checkTrue("the grey ramp is xterm's", claude.colour(244) == 0x808080 && claude.colour(255) == 0xeeeeee);
+        checkTrue("dim is halfway to the background",
+            claude.dim(0xe5e5e5) == (((0xe5 + 0x17) / 2) * 0x010101));
+
+        Settings defaults = Settings.defaults();
+        checkTrue("the default look is Claude, xterm-256color, the connection's own size",
+            defaults.theme() == Theme.CLAUDE && "xterm-256color".equals(defaults.terminalType())
+                && defaults.fontSize() == -1);
+
+        Settings changed = defaults.withTheme(1).withText(6).withBackground(4)
+            .withFontSize(3).withTerminalType(1);
+        try {
+            Settings back = Settings.decode(changed.encode());
+            checkTrue("settings round trip",
+                back.themeIndex() == 1 && back.textIndex() == 6 && back.backgroundIndex() == 4
+                    && back.fontSize() == 3 && "vt320".equals(back.terminalType()));
+            checkTrue("per-connection size survives a round trip",
+                Settings.decode(defaults.encode()).fontSize() == -1);
+            checkTrue("smooth scroll is on by default and survives turning off",
+                defaults.smoothScroll()
+                    && !Settings.decode(defaults.withSmoothScroll(false).encode()).smoothScroll());
+            WireWriter v1 = new WireWriter(32);
+            v1.writeUint32(1);
+            v1.writeUint32(2);
+            v1.writeUint32(0);
+            v1.writeUint32(0);
+            v1.writeUint32(0);
+            v1.writeUint32(0);
+            Settings old = Settings.decode(v1.toByteArray());
+            checkTrue("settings saved before smooth scroll still read, with it on",
+                old.themeIndex() == 2 && old.smoothScroll() && old.keyBar() && old.tmux());
+            Settings plain = Settings.decode(defaults.withKeyBar(false).withTmux(false).encode());
+            checkTrue("key bar and tmux survive being turned off",
+                !plain.keyBar() && !plain.tmux() && plain.smoothScroll());
+            checkTrue("sessions start in tmux by default, in the one named bb",
+                defaults.tmux() && Settings.TMUX_COMMAND.indexOf("new-session -A -s bb") > 0
+                    && Settings.TMUX_COMMAND.indexOf("escape-time 10") > 0
+                    && Settings.TMUX_COMMAND.endsWith("|| exec \"$SHELL\" -l"));
+        } catch (IOException e) {
+            fail("settings round trip (threw " + e + ")");
+        }
+        Theme custom = changed.theme();
+        checkTrue("overrides replace the theme's text and background",
+            custom.foreground() == 0x33ff66 && custom.background() == 0x0d1b2a
+                && custom.colour(0) == 0x0d1b2a);
+
+        Profile p = basic("p", "h", 22, "u", "", false);
+        checkTrue("a fixed size wins over the connection's", changed.fontFor(p) == 3);
+        checkTrue("per connection uses the connection's", defaults.fontFor(p) == p.fontSize());
+        checkTrue("font steps go by cell size",
+            Settings.stepFont(0, 1) == 3 && Settings.stepFont(0, -1) == 1
+                && Settings.stepFont(4, 1) == 4 && Settings.stepFont(2, -1) == 2);
+        checkTrue("out-of-range indices fall back rather than throw",
+            new Settings(99, -5, 99, 42, 7, true, true, true).themeIndex() == 0);
+    }
+
+    /** A connection baked into the jar, and what it may and may not overwrite. */
+    private static void presets() {
+        try {
+            String blob = "AAAAC3NzaC1lZDI1NTE5AAAAIPxRzY5iGKGjjaR+0AIw8FgIFu0TujMDrF3rkRVIkIAl";
+            Preset preset = Preset.parse("# a comment\nname=VPS\nhost=203.0.113.7\nport=2222\n"
+                + "user=root\nfont=3\nautoconnect=yes\nhostkey=" + blob + "\n",
+                Utf8.encode("KEY TEXT"));
+            Profile p = preset.profile();
+            checkTrue("a preset reads every field",
+                "VPS".equals(p.name()) && "203.0.113.7".equals(p.host())
+                    && p.port() == 2222 && "root".equals(p.user())
+                    && p.fontSize() == 3 && "KEY TEXT".equals(p.privateKey())
+                    && preset.autoConnect() && !p.savePassword());
+
+            final Map<String, Profile> profiles = new HashMap<String, Profile>();
+            final Map<String, byte[]> keys = new HashMap<String, byte[]>();
+            Profile.Store profileStore = new Profile.Store() {
+                public Profile[] list() {
+                    return profiles.values().toArray(new Profile[0]);
+                }
+                public void save(Profile profile) {
+                    profiles.put(profile.name(), profile);
+                }
+                public void delete(String name) {
+                    profiles.remove(name);
+                }
+            };
+            KnownHosts.Store keyStore = new KnownHosts.Store() {
+                public byte[] lookup(String host, int port) {
+                    return keys.get(host + ":" + port);
+                }
+                public void store(String host, int port, byte[] b) {
+                    keys.put(host + ":" + port, b);
+                }
+            };
+
+            preset.install(profileStore, keyStore);
+            checkTrue("installing a preset saves it and pins its host key",
+                profiles.containsKey("VPS")
+                    && Base64.encode(keys.get("203.0.113.7:2222")).equals(blob));
+
+            profiles.put("VPS", basic("VPS", "203.0.113.7", 2222, "edited", "", false));
+            keys.put("203.0.113.7:2222", new byte[] { 1, 2, 3 });
+            preset.install(profileStore, keyStore);
+            checkTrue("a preset leaves an edited connection alone",
+                "edited".equals(profiles.get("VPS").user()));
+            checkTrue("a preset never replaces a pinned host key",
+                keys.get("203.0.113.7:2222").length == 3);
+
+            checkTrue("a preset with no autoconnect line does not connect",
+                !Preset.parse("host=h\nuser=u\n", null).autoConnect());
+        } catch (IOException e) {
+            fail("presets (threw " + e + ")");
+        }
+        checkRejected("a preset without a host is refused",
+            () -> Preset.parse("user=root\n", null));
     }
 
     private static void savedConnections() {

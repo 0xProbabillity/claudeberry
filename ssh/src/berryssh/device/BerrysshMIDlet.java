@@ -23,6 +23,7 @@ import berryssh.protocol.Channel;
 import berryssh.protocol.Connection;
 import berryssh.protocol.HostKey;
 import berryssh.protocol.KnownHosts;
+import berryssh.protocol.Message;
 import berryssh.protocol.OpenSshKey;
 import berryssh.protocol.Transport;
 import berryssh.protocol.UserAuth;
@@ -66,6 +67,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private final Command newConnection = new Command("New", Command.SCREEN, 2);
     private final Command edit = new Command("Edit", Command.SCREEN, 3);
     private final Command delete = new Command("Delete", Command.SCREEN, 4);
+    private final Command settingsCommand = new Command("Settings", Command.SCREEN, 5);
     private final Command quit = new Command("Quit", Command.EXIT, 9);
 
     // The editor
@@ -85,10 +87,13 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private final Command escape = new Command("Esc", Command.SCREEN, 2);
     private final Command pageUp = new Command("Page up", Command.SCREEN, 3);
     private final Command pageDown = new Command("Page down", Command.SCREEN, 4);
-    private final Command keys = new Command("Keys", Command.SCREEN, 5);
+    private final Command keys = new Command("Key codes", Command.SCREEN, 9);
     private final Command fullScreen = new Command("Full screen", Command.SCREEN, 6);
     private final Command reconnect = new Command("Reconnect", Command.SCREEN, 7);
     private final Command disconnect = new Command("Disconnect", Command.STOP, 8);
+    private final Command quickKeys = new Command("Quick keys", Command.SCREEN, 0);
+    private final Command fontBigger = new Command("Font +", Command.SCREEN, 2);
+    private final Command fontSmaller = new Command("Font -", Command.SCREEN, 3);
 
     private static final String[] FIELDS = {
         "Name", "Host", "Port", "User", "Password", "Save password",
@@ -147,6 +152,9 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private final EntropyPool random = new EntropyPool();
     private final RecordStoreHostKeys hostKeys = new RecordStoreHostKeys();
     private final RecordStoreProfiles store = new RecordStoreProfiles();
+    private final RecordStoreSettings settingsStore = new RecordStoreSettings();
+    private Settings settings = Settings.defaults();
+    private ListScreen settingsScreen;
 
     private SocketConnection socket;
     private Channel channel;
@@ -188,15 +196,44 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
                 open(index);
             }
         });
-        connections.setHint("Menu for New, Edit, Delete");
+        connections.setHint("Menu for New, Edit, Delete, Settings");
         connections.addCommand(connect);
         connections.addCommand(newConnection);
         connections.addCommand(edit);
         connections.addCommand(delete);
+        connections.addCommand(settingsCommand);
         connections.addCommand(quit);
+        try {
+            settings = settingsStore.load();
+        } catch (IOException e) {
+            settings = Settings.defaults();
+        }
         connections.setCommandListener(this);
+
+        // A jar built with tools/make_preset.sh carries its own connection.
+        // Installed before the list is read, so it is there on first launch.
+        Preset preset = null;
+        try {
+            preset = Preset.load();
+            if (preset != null) {
+                preset.install(store, hostKeys);
+            }
+        } catch (IOException e) {
+            preset = null;
+        }
+
         refreshConnections();
         display.setCurrent(connections);
+
+        // Only on launch: after a disconnect the list is where you stay.
+        if (preset != null && preset.autoConnect()) {
+            for (int i = 0; i < profiles.length; i++) {
+                if (profiles[i].name().equals(preset.profile().name())) {
+                    begin(profiles[i]);
+                    break;
+                }
+            }
+        }
     }
 
     protected void pauseApp() {
@@ -262,6 +299,10 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
                 showEditor(selected());
                 return;
             }
+            if (command == settingsCommand) {
+                showSettings();
+                return;
+            }
             if (command == delete) {
                 Profile profile = selected();
                 if (profile != null) {
@@ -283,6 +324,10 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         }
         if (command == save) {
             saveEditor();
+            return;
+        }
+        if (command == back && from == settingsScreen) {
+            display.setCurrent(connections);
             return;
         }
         if (command == back) {
@@ -352,23 +397,50 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             canvas.toggleKeyCodes();
             return;
         }
+        if (command == fontBigger || command == fontSmaller) {
+            changeFont(command == fontBigger ? 1 : -1);
+            return;
+        }
         if (command == fullScreen) {
             fullScreenOn = !fullScreenOn;
             canvas.setFullScreen(fullScreenOn);
             resizeTerminal();
             return;
         }
+        if (command == quickKeys) {
+            canvas.togglePanel();
+            return;
+        }
         if (command == reconnect) {
-            shutdown();
-            if (current != null) {
-                start(current);
-            }
+            reconnectSession();
             return;
         }
         if (command == disconnect) {
-            shutdown();
-            refreshConnections();
-            display.setCurrent(connections);
+            disconnectSession();
+        }
+    }
+
+    private void reconnectSession() {
+        shutdown();
+        if (current != null) {
+            start(current);
+        }
+    }
+
+    private void disconnectSession() {
+        shutdown();
+        refreshConnections();
+        display.setCurrent(connections);
+    }
+
+    /** What the key bar and quick panel ask for that is not a key. */
+    private void sessionAction(int code) {
+        if (code == Keys.ACTION_FONT_UP || code == Keys.ACTION_FONT_DOWN) {
+            changeFont(code == Keys.ACTION_FONT_UP ? 1 : -1);
+        } else if (code == Keys.ACTION_RECONNECT) {
+            reconnectSession();
+        } else if (code == Keys.ACTION_DISCONNECT) {
+            disconnectSession();
         }
     }
 
@@ -714,16 +786,26 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
 
         BitmapFont font;
         try {
-            font = BitmapFont.load(profile.fontResource(),
-                profile.cellWidth(), profile.cellHeight());
+            font = loadFont(settings.fontFor(profile));
         } catch (IOException e) {
             show("The font atlas is missing: " + e.getMessage(),
                 AlertType.ERROR, connections);
             return;
         }
 
-        canvas = new TerminalCanvas(font);
+        canvas = new TerminalCanvas(font, settings.theme());
+        canvas.setSmoothScroll(settings.smoothScroll());
+        canvas.setKeyBar(settings.keyBar());
+        canvas.setListener(new TerminalCanvas.Listener() {
+            public void action(int code) {
+                sessionAction(code);
+            }
+        });
+        // First in the menu: everything the keyboard lacks, one press away.
+        canvas.addCommand(quickKeys);
         canvas.addCommand(control);
+        canvas.addCommand(fontBigger);
+        canvas.addCommand(fontSmaller);
         canvas.addCommand(escape);
         canvas.addCommand(pageUp);
         canvas.addCommand(pageDown);
@@ -873,22 +955,33 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             canvas.attach(terminal, keyboard);
             canvas.setStatus(profile.user() + "@" + host + "  " + columns + "x" + rows);
 
-            session.requestPty("xterm", columns, rows);
-            session.requestShell();
+            session.requestPty(settings.terminalType(), columns, rows);
+            if (settings.tmux()) {
+                session.requestExec(Settings.TMUX_COMMAND);
+            } else {
+                session.requestShell();
+            }
+            keepAlive(open);
 
             byte[] buffer = new byte[4096];
+            int carried = 0;
             while (running) {
-                int n = session.read(buffer, 0, buffer.length);
+                int n = session.read(buffer, carried, buffer.length - carried);
                 if (n < 0) {
                     break;
                 }
+                // A character split across two reads waits for its other half.
+                int total = carried + n;
+                int complete = Utf8.completeLength(buffer, 0, total);
                 // The painter reads this buffer from the event thread while
                 // this thread writes it. VT320 publishes a mutex for exactly
                 // that, and using it is the difference between a redraw during
                 // a scroll and an index off the end of an array being resized.
                 synchronized (terminal.getTermBufferMutex()) {
-                    terminal.putString(Utf8.decode(buffer, 0, n));
+                    terminal.putString(Utf8.decode(buffer, 0, complete));
                 }
+                carried = total - complete;
+                System.arraycopy(buffer, complete, buffer, 0, carried);
                 canvas.repaint();
             }
             canvas.setStatus("disconnected");
@@ -1000,6 +1093,156 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
      * server has to be told, or a full-screen program keeps drawing to the old
      * dimensions and the display tears.
      */
+    /**
+     * Something on the wire every half minute, so a carrier's NAT does not
+     * forget an idle session. Mobile networks drop quiet TCP connections after
+     * a few minutes, and the first anyone hears of it is a key that goes
+     * nowhere. IGNORE is the message SSH has for exactly this.
+     */
+    private void keepAlive(final Connection open) {
+        new Thread(new Runnable() {
+            public void run() {
+                byte[] ping = { (byte) Message.IGNORE, 0, 0, 0, 0 };
+                while (running && connection == open) {
+                    try {
+                        Thread.sleep(30000);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                    if (!running || connection != open) {
+                        return;
+                    }
+                    try {
+                        open.transport().writePacket(ping);
+                    } catch (IOException e) {
+                        // The session loop sees the same failure and says so.
+                        return;
+                    }
+                }
+            }
+        }).start();
+    }
+
+    private static BitmapFont loadFont(int index) throws IOException {
+        return BitmapFont.load("/fonts/mono" + Profile.CELL_WIDTHS[index] + "x"
+            + Profile.CELL_HEIGHTS[index] + ".png",
+            Profile.CELL_WIDTHS[index], Profile.CELL_HEIGHTS[index]);
+    }
+
+    /**
+     * One size up or down, in the running session, and remembered: in the
+     * settings when they fix the size for every connection, otherwise in this
+     * connection.
+     */
+    private void changeFont(int direction) {
+        if (current == null || canvas == null) {
+            return;
+        }
+        int from = settings.fontFor(current);
+        int to = Settings.stepFont(from, direction);
+        if (to == from) {
+            canvas.setStatus(direction > 0 ? "largest size" : "smallest size");
+            return;
+        }
+        try {
+            canvas.setFont(loadFont(to));
+        } catch (IOException e) {
+            canvas.setStatus("no font: " + e.getMessage());
+            return;
+        }
+        Profile p = current;
+        current = new Profile(p.name(), p.host(), p.port(), p.user(), p.password(),
+            p.savePassword(), p.privateKey(), to, p.webSocketPath(), p.bridgeKey(),
+            p.bridgeTarget());
+        try {
+            if (settings.fontSize() >= 0) {
+                settings = settings.withFontSize(to);
+                settingsStore.save(settings);
+            } else {
+                store.save(current);
+            }
+        } catch (IOException e) {
+            // The session has the new size either way; only the next one
+            // would not.
+        }
+        resizeTerminal();
+    }
+
+    private static final String[] SETTING_ROWS = {
+        "Theme", "Text colour", "Background", "Font size", "Terminal type",
+        "Smooth scroll", "Key bar", "Session" };
+
+    private void showSettings() {
+        if (settingsScreen == null) {
+            settingsScreen = new ListScreen("Settings", new ListScreen.Listener() {
+                public void selected(int index) {
+                    cycleSetting(index);
+                }
+            });
+            settingsScreen.setHint("Click a row to change it");
+            settingsScreen.addCommand(back);
+            settingsScreen.setCommandListener(this);
+        }
+        refreshSettings();
+        display.setCurrent(settingsScreen);
+    }
+
+    private void refreshSettings() {
+        String size = settings.fontSize() < 0
+            ? "Per connection"
+            : Profile.CELL_WIDTHS[settings.fontSize()] + "x"
+                + Profile.CELL_HEIGHTS[settings.fontSize()];
+        String[] details = {
+            Theme.ALL[settings.themeIndex()].name(),
+            Settings.TEXT_NAMES[settings.textIndex()],
+            Settings.BACKGROUND_NAMES[settings.backgroundIndex()],
+            size,
+            settings.terminalType(),
+            settings.smoothScroll() ? "On" : "Off",
+            settings.keyBar() ? "On" : "Off",
+            settings.tmux() ? "tmux (reconnects to the same one)" : "Plain shell"
+        };
+        settingsScreen.setRows(SETTING_ROWS, details);
+    }
+
+    /** Steps a row to its next value, wrapping, and saves at once. */
+    private void cycleSetting(int index) {
+        if (index == 0) {
+            settings = settings.withTheme((settings.themeIndex() + 1) % Theme.ALL.length);
+        } else if (index == 1) {
+            settings = settings.withText((settings.textIndex() + 1) % Settings.TEXT_COLOURS.length);
+        } else if (index == 2) {
+            settings = settings.withBackground(
+                (settings.backgroundIndex() + 1) % Settings.BACKGROUND_COLOURS.length);
+        } else if (index == 3) {
+            // Per connection, then each size from smallest to largest.
+            int at = -1;
+            for (int i = 0; i < Settings.SIZE_ORDER.length; i++) {
+                if (Settings.SIZE_ORDER[i] == settings.fontSize()) {
+                    at = i;
+                }
+            }
+            int next = at + 1;
+            settings = settings.withFontSize(
+                next >= Settings.SIZE_ORDER.length ? -1 : Settings.SIZE_ORDER[next]);
+        } else if (index == 4) {
+            settings = settings.withTerminalType(
+                (settings.terminalTypeIndex() + 1) % Settings.TERMINAL_TYPES.length);
+        } else if (index == 5) {
+            settings = settings.withSmoothScroll(!settings.smoothScroll());
+        } else if (index == 6) {
+            settings = settings.withKeyBar(!settings.keyBar());
+        } else if (index == 7) {
+            settings = settings.withTmux(!settings.tmux());
+        }
+        try {
+            settingsStore.save(settings);
+        } catch (IOException e) {
+            show("Could not save settings: " + e.getMessage(), AlertType.ERROR, settingsScreen);
+        }
+        refreshSettings();
+    }
+
     private void resizeTerminal() {
         if (terminal == null || channel == null) {
             return;

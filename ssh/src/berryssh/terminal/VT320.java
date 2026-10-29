@@ -415,11 +415,18 @@ public abstract class VT320 {
 	public final static int INVERT = 0x04;
 	/** Lower intensity character. */
 	public final static int LOW = 0x08;
-	/** Character has color **/
-	public final static int COLOR = 0xff0;
+	/**
+	 * Colours are an xterm-256 index plus one, so that zero means the
+	 * default: nine bits each, above BLINK. 256-colour and truecolour
+	 * requests both land here, the latter on the nearest palette entry.
+	 */
+	public final static int FG_SHIFT = 13;
+	public final static int BG_SHIFT = 22;
 	/** FG color indicator **/
-	public final static int COLOR_FG = 0x0f0;
-	public final static int COLOR_BG = 0xf00;
+	public final static int COLOR_FG = 0x1ff << FG_SHIFT;
+	public final static int COLOR_BG = 0x1ff << BG_SHIFT;
+	/** Character has color **/
+	public final static int COLOR = COLOR_FG | COLOR_BG;
 	private Object termBufferMutex = new Object();
 	public String debugName;
 	public final static int BLINK = 0x1000;
@@ -712,6 +719,17 @@ public abstract class VT320 {
 	 * @param s
 	 *            the string to be sent
 	 */
+	/**
+	 * Sends a whole key sequence, Shift-Tab's ESC [ Z for one, in a single
+	 * write. Typed a character at a time it can reach the far end in two
+	 * packets, and a program that times Escape — Claude Code does — then reads
+	 * the first as the Escape key on its own.
+	 */
+	public void sendSequence(String s) {
+		writeSpecial(s);
+		flush();
+	}
+
 	private boolean writeSpecial(String s) {
 		if (s == null) {
 			return true;
@@ -2100,11 +2118,11 @@ public abstract class VT320 {
 								}
 								ncolor = ((ncolor & 1) << 2) | (ncolor & 2)
 										| ((ncolor & 4) >> 2);
-								attributes |= ((ncolor) + 1) << 4;
+								attributes |= ((ncolor) + 1) << FG_SHIFT;
 								ncolor = DCEvars[i + 2];
 								ncolor = ((ncolor & 1) << 2) | (ncolor & 2)
 										| ((ncolor & 4) >> 2);
-								attributes |= ((ncolor) + 1) << 8;
+								attributes |= ((ncolor) + 1) << BG_SHIFT;
 								i += 2;
 							} else {
 								attributes |= LOW;
@@ -2148,7 +2166,7 @@ public abstract class VT320 {
 							attributes &= ~UNDERLINE;
 							break;
 						case 22:
-							attributes &= ~BOLD;
+							attributes &= ~(BOLD | LOW);
 							break;
 						case 30:
 						case 31:
@@ -2159,8 +2177,44 @@ public abstract class VT320 {
 						case 36:
 						case 37:
 							attributes &= ~COLOR_FG;
-							attributes |= ((DCEvars[i] - 30) + 1) << 4;
+							attributes |= ((DCEvars[i] - 30) + 1) << FG_SHIFT;
 							break;
+						case 90:
+						case 91:
+						case 92:
+						case 93:
+						case 94:
+						case 95:
+						case 96:
+						case 97:
+							attributes &= ~COLOR_FG;
+							attributes |= ((DCEvars[i] - 90) + 9) << FG_SHIFT;
+							break;
+						case 38:
+						case 48: {
+							// 38;5;n and 38;2;r;g;b, and the same for 48.
+							int colour = -1;
+							int used = 0;
+							if (i + 2 <= DCEvar && DCEvars[i + 1] == 5) {
+								colour = DCEvars[i + 2] & 0xff;
+								used = 2;
+							} else if (i + 4 <= DCEvar && DCEvars[i + 1] == 2) {
+								colour = nearestColour(DCEvars[i + 2],
+										DCEvars[i + 3], DCEvars[i + 4]);
+								used = 4;
+							}
+							if (colour >= 0) {
+								if (DCEvars[i] == 38) {
+									attributes &= ~COLOR_FG;
+									attributes |= (colour + 1) << FG_SHIFT;
+								} else {
+									attributes &= ~COLOR_BG;
+									attributes |= (colour + 1) << BG_SHIFT;
+								}
+							}
+							i += used;
+							break;
+						}
 						case 39:
 							attributes &= ~COLOR_FG;
 							break;
@@ -2173,7 +2227,18 @@ public abstract class VT320 {
 						case 46:
 						case 47:
 							attributes &= ~COLOR_BG;
-							attributes |= ((DCEvars[i] - 40) + 1) << 8;
+							attributes |= ((DCEvars[i] - 40) + 1) << BG_SHIFT;
+							break;
+						case 100:
+						case 101:
+						case 102:
+						case 103:
+						case 104:
+						case 105:
+						case 106:
+						case 107:
+							attributes &= ~COLOR_BG;
+							attributes |= ((DCEvars[i] - 100) + 9) << BG_SHIFT;
 							break;
 						case 49:
 							attributes &= ~COLOR_BG;
@@ -2311,6 +2376,28 @@ public abstract class VT320 {
 	 * @see #insertChar
 	 * @see #deleteChar
 	 */
+	/** The xterm-256 index closest to an RGB colour: the cube or the grey ramp. */
+	public static int nearestColour(int r, int g, int b) {
+		int ri = cubeStep(r), gi = cubeStep(g), bi = cubeStep(b);
+		int cube = 16 + 36 * ri + 6 * gi + bi;
+		int cr = cubeLevel(ri), cg = cubeLevel(gi), cb = cubeLevel(bi);
+		int average = (r + g + b) / 3;
+		int greyStep = average > 238 ? 23 : (average < 8 ? 0 : (average - 8) / 10);
+		int grey = 8 + 10 * greyStep;
+		int cubeDistance = (r - cr) * (r - cr) + (g - cg) * (g - cg) + (b - cb) * (b - cb);
+		int greyDistance = (r - grey) * (r - grey) + (g - grey) * (g - grey) + (b - grey) * (b - grey);
+		return greyDistance < cubeDistance ? 232 + greyStep : cube;
+	}
+
+	private static int cubeStep(int v) {
+		return v < 48 ? 0 : (v < 115 ? 1 : (v - 35) / 40);
+	}
+
+	/** The channel value of a step of the 6x6x6 cube: 0, 95, 135, 175, 215, 255. */
+	public static int cubeLevel(int step) {
+		return step == 0 ? 0 : 55 + step * 40;
+	}
+
 	public void putChar(int c, int l, char ch) {
 		putChar(c, l, ch, NORMAL);
 	}

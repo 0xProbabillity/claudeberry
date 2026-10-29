@@ -1,4 +1,6 @@
 import berryssh.device.Keyboard;
+import berryssh.device.Keys;
+import berryssh.device.RowDiff;
 import berryssh.terminal.BitmapFont;
 import berryssh.terminal.VT320;
 
@@ -33,6 +35,11 @@ public class TerminalTests {
         dispatchesKeys();
         keepsScrollback();
         mapsCharactersToGlyphs();
+        parsesModernColours();
+        mapsClaudeCodeGlyphs();
+        findsWhatScrolled();
+        slidesSmoothly();
+        sendsTheMissingKeys();
 
         System.out.println();
         System.out.println(passed + " passed, " + failed + " failed");
@@ -203,6 +210,214 @@ public class TerminalTests {
      * Turkish letters above U+00FF resolved to some empty cell and drew
      * nothing, with no way to tell that from a space.
      */
+    private static int foregroundAt(VT320 t, int column, int row) {
+        int a = (int) (t.terminalData[t.screenBase + row][column] >>> 32);
+        return ((a & VT320.COLOR_FG) >>> VT320.FG_SHIFT) - 1;
+    }
+
+    private static int backgroundAt(VT320 t, int column, int row) {
+        int a = (int) (t.terminalData[t.screenBase + row][column] >>> 32);
+        return ((a & VT320.COLOR_BG) >>> VT320.BG_SHIFT) - 1;
+    }
+
+    private static int attributesAt(VT320 t, int column, int row) {
+        return (int) (t.terminalData[t.screenBase + row][column] >>> 32);
+    }
+
+    /** What xterm-256color programs send, Claude Code among them. */
+    private static void parsesModernColours() {
+        Headless t = new Headless(20, 5);
+        t.putString(esc("[38;5;208m") + "a" + esc("[48;5;236m") + "b" + esc("[0m") + "c");
+        checkTrue("38;5;n sets a 256-colour foreground", foregroundAt(t, 0, 0) == 208);
+        checkTrue("48;5;n sets a 256-colour background",
+            backgroundAt(t, 1, 0) == 236 && foregroundAt(t, 1, 0) == 208);
+        checkTrue("SGR 0 clears both", foregroundAt(t, 2, 0) == -1 && backgroundAt(t, 2, 0) == -1);
+
+        // Claude's orange, rgb(215,119,87), lands on the cube's 173.
+        t.putString(esc("[38;2;215;119;87m") + "d" + esc("[39m") + "e");
+        checkTrue("truecolour lands on the nearest palette entry", foregroundAt(t, 3, 0) == 173);
+        checkTrue("SGR 39 restores the default foreground", foregroundAt(t, 4, 0) == -1);
+        checkTrue("a grey lands on the grey ramp", VT320.nearestColour(128, 128, 128) == 244);
+        checkTrue("pure white is the cube's corner", VT320.nearestColour(255, 255, 255) == 231);
+
+        t.putString(esc("[91m") + "f" + esc("[104m") + "g" + esc("[0m"));
+        checkTrue("90-97 are the bright foregrounds", foregroundAt(t, 5, 0) == 9);
+        checkTrue("100-107 are the bright backgrounds", backgroundAt(t, 6, 0) == 12);
+
+        // Parameters after a 38;5;n still apply: the colour consumed two more.
+        t.putString(esc("[1;38;5;12;4m") + "h" + esc("[0m"));
+        int a = attributesAt(t, 7, 0);
+        checkTrue("an extended colour does not swallow what follows it",
+            foregroundAt(t, 7, 0) == 12 && (a & VT320.BOLD) != 0 && (a & VT320.UNDERLINE) != 0);
+
+        t.putString(esc("[2m") + "i" + esc("[22m") + "j");
+        checkTrue("SGR 22 ends dim as well as bold",
+            (attributesAt(t, 8, 0) & VT320.LOW) != 0 && (attributesAt(t, 9, 0) & VT320.LOW) == 0);
+    }
+
+    private static void mapsClaudeCodeGlyphs() {
+        String glyphs = "\u25cf\u23fa\u23bf\u276f\u2026\u273b\u2736\u2733\u2722\u273d"
+            + "\u2713\u2717\u2190\u2192\u21b5\u23f5\u23f8\u2022\u2014\u25b6\u2588\u2590\u259b\u259c";
+        boolean all = true;
+        for (int i = 0; i < glyphs.length(); i++) {
+            if (BitmapFont.indexOf(glyphs.charAt(i)) < 0) {
+                all = false;
+                System.out.println("        no cell for U+" + Integer.toHexString(glyphs.charAt(i)));
+            }
+        }
+        checkTrue("Claude Code's symbols and mascot all have cells", all);
+        checkTrue("the old cells kept their places",
+            BitmapFont.indexOf('\u2580') == 357 - 32 && BitmapFont.indexOf('\u259f') == 356);
+    }
+
+    private static long[] hashes(VT320 t, int columns, int rows, boolean[] blank) {
+        long[] h = new long[rows];
+        for (int row = 0; row < rows; row++) {
+            long[] cells = t.terminalData[t.screenBase + row];
+            boolean cursor = row == t.ROW;
+            h[row] = RowDiff.hash(cells, columns, cursor ? t.COLUMN : -1);
+            blank[row] = !cursor && RowDiff.blank(cells, columns);
+        }
+        return h;
+    }
+
+    /** The comparison the canvas uses to tell a scroll from a redraw. */
+    private static void findsWhatScrolled() {
+        int columns = 30;
+        int rows = 10;
+        Headless t = new Headless(columns, rows);
+        t.setScrollbackBufferSize(100);
+        for (int i = 1; i <= 12; i++) {
+            t.putString("line " + i + "\r\n");
+        }
+        boolean[] beforeBlank = new boolean[rows];
+        long[] before = hashes(t, columns, rows, beforeBlank);
+        boolean[] drawn = new boolean[rows];
+        for (int i = 0; i < rows; i++) {
+            drawn[i] = true;
+        }
+
+        t.putString("line 13\r\nline 14\r\nline 15\r\n");
+        boolean[] nowBlank = new boolean[rows];
+        long[] now = hashes(t, columns, rows, nowBlank);
+        checkTrue("three new lines read as a scroll of three",
+            RowDiff.scrollDistance(now, nowBlank, before, beforeBlank, drawn) == 3);
+
+        // What Claude Code does between scrolls: the cursor goes up and a row
+        // is rewritten in place. That is a change, not a scroll.
+        before = now;
+        beforeBlank = nowBlank;
+        t.putString(esc("[3A") + esc("[2K") + "spinner" + esc("[3B") + "\r");
+        now = hashes(t, columns, rows, nowBlank = new boolean[rows]);
+        checkTrue("a row rewritten in place is not a scroll",
+            RowDiff.scrollDistance(now, nowBlank, before, beforeBlank, drawn) == 0);
+        int changed = 0;
+        for (int i = 0; i < rows; i++) {
+            if (now[i] != before[i]) {
+                changed++;
+            }
+        }
+        checkTrue("and only that row needs drawing again", changed == 1);
+
+        Headless empty = new Headless(columns, rows);
+        boolean[] eb = new boolean[rows];
+        long[] e1 = hashes(empty, columns, rows, eb);
+        empty.putString("\r\n\r\n");
+        boolean[] eb2 = new boolean[rows];
+        long[] e2 = hashes(empty, columns, rows, eb2);
+        checkTrue("an empty screen never looks like a scroll",
+            RowDiff.scrollDistance(e2, eb2, e1, eb, drawn) == 0);
+    }
+
+    private static void slidesSmoothly() {
+        checkTrue("a slide starts at the full distance", RowDiff.slideOffset(0, 200, 42) == 42);
+        checkTrue("and ends at none", RowDiff.slideOffset(200, 200, 42) == 0
+            && RowDiff.slideOffset(500, 200, 42) == 0);
+        checkTrue("halfway through it is halfway there", RowDiff.slideOffset(100, 200, 42) == 21);
+        boolean falling = true;
+        int last = 43;
+        for (int ms = 0; ms <= 200; ms += 5) {
+            int offset = RowDiff.slideOffset(ms, 200, 42);
+            if (offset > last) {
+                falling = false;
+            }
+            last = offset;
+        }
+        checkTrue("it never moves backwards", falling);
+        checkTrue("it eases in: the first tenth covers less than a tenth",
+            42 - RowDiff.slideOffset(20, 200, 42) < 5);
+        checkTrue("long scrolls are capped so typing never waits",
+            RowDiff.slideDuration(1) == 170 && RowDiff.slideDuration(30) == 320);
+    }
+
+    private static String sent(Keys.Entry entry) {
+        Headless t = new Headless(20, 5);
+        Keyboard k = new Keyboard(t);
+        k.perform(entry);
+        return t.sent.toString();
+    }
+
+    /** What the key bar and quick panel put on the wire. */
+    private static void sendsTheMissingKeys() {
+        checkTrue("Down sends the cursor-down sequence",
+            sent(Keys.hotkey(Keys.PANEL, 'k')).equals("\u001b[B"));
+        checkTrue("Shift+Tab goes as one sequence", sent(Keys.hotkey(Keys.PANEL, 'a')).equals("\u001b[Z"));
+        checkTrue("Esc is a lone escape", sent(Keys.hotkey(Keys.PANEL, 'e')).equals("\u001b"));
+        checkTrue("Ctrl+C is ETX", sent(Keys.hotkey(Keys.PANEL, 'c')).equals("\u0003"));
+        checkTrue("Enter on the panel is a carriage return", sent(Keys.hotkey(Keys.PANEL, '\r')).equals("\r"));
+        checkTrue("Detach is the tmux prefix and d", sent(Keys.hotkey(Keys.PANEL, 'b')).equals("\u0002d"));
+        checkTrue("capital letters work as hotkeys too", Keys.hotkey(Keys.PANEL, 'K') == Keys.hotkey(Keys.PANEL, 'k'));
+        checkTrue("the arrows sit on I J K L",
+            Keys.hotkey(Keys.PANEL, 'i').code == VT320.VK_UP && Keys.hotkey(Keys.PANEL, 'j').code == VT320.VK_LEFT
+                && Keys.hotkey(Keys.PANEL, 'k').code == VT320.VK_DOWN && Keys.hotkey(Keys.PANEL, 'l').code == VT320.VK_RIGHT);
+
+        boolean unique = true;
+        for (int i = 0; i < Keys.PANEL.length; i++) {
+            for (int j = i + 1; j < Keys.PANEL.length; j++) {
+                if (Keys.PANEL[i].hotkey != 0 && Keys.PANEL[i].hotkey == Keys.PANEL[j].hotkey) {
+                    unique = false;
+                    System.out.println("        two cells on " + Keys.PANEL[i].hotkey);
+                }
+            }
+        }
+        checkTrue("no two panel cells share a letter", unique);
+        checkTrue("the panel is a full grid",
+            Keys.PANEL.length % Keys.PANEL_COLUMNS == 0 && Keys.PANEL.length == 25);
+
+        // Ctrl armed from the panel, then a letter typed, is that control.
+        Headless t = new Headless(20, 5);
+        Keyboard k = new Keyboard(t);
+        k.perform(Keys.hotkey(Keys.PANEL, 'x'));
+        k.keyPressed('a', 0);
+        checkTrue("Ctrl from the panel applies to the next letter", t.sent.toString().equals("\u0001"));
+        checkTrue("arming Ctrl closes the panel so the letter reaches the terminal",
+            !Keys.hotkey(Keys.PANEL, 'x').keepsPanelOpen());
+        checkTrue("arrows keep the panel open for the next press",
+            Keys.hotkey(Keys.PANEL, 'k').keepsPanelOpen() && Keys.hotkey(Keys.PANEL, '\r').keepsPanelOpen());
+
+        Keys.Entry[] symbols = Keys.symbols();
+        Headless st = new Headless(20, 5);
+        Keyboard sk = new Keyboard(st);
+        for (int i = 0; i < symbols.length - 1; i++) {
+            sk.perform(symbols[i]);
+        }
+        checkTrue("every symbol types itself", st.sent.toString().equals(Keys.SYMBOLS));
+        checkTrue("every bar and panel label can be drawn", drawable(Keys.BAR) && drawable(Keys.PANEL));
+    }
+
+    private static boolean drawable(Keys.Entry[] entries) {
+        for (int i = 0; i < entries.length; i++) {
+            String label = entries[i].label;
+            for (int c = 0; c < label.length(); c++) {
+                if (BitmapFont.indexOf(label.charAt(c)) < 0) {
+                    System.out.println("        no glyph for " + label);
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     private static void mapsCharactersToGlyphs() {
         checkTrue("space is the first cell", BitmapFont.indexOf(' ') == 0);
         checkTrue("ASCII is contiguous from there",

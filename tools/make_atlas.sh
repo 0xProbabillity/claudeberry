@@ -28,14 +28,14 @@ if [ ! -f "$FONT" ]; then
     trap 'rm -rf "$tmp"' EXIT
     curl -fsSL -o "$tmp/dejavu.zip" \
         "https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_${FONT_VERSION//./_}/dejavu-fonts-ttf-$FONT_VERSION.zip"
-    unzip -q -j "$tmp/dejavu.zip" "*/ttf/DejaVuSansMono.ttf" -d "$FONT_DIR"
+    unzip -q -j "$tmp/dejavu.zip" "*/ttf/DejaVuSansMono.ttf" "*/ttf/DejaVuSans.ttf" -d "$FONT_DIR"
     unzip -q -j "$tmp/dejavu.zip" "*/LICENSE" -d "$FONT_DIR" 2>/dev/null || true
 fi
 
 echo "==> generating atlases"
 for spec in "8 14 mono8x14.png" "6 11 mono6x11.png" "6 9 mono6x9.png" "10 18 mono10x18.png" "12 21 mono12x21.png"; do
     set -- $spec
-    java tools/MakeAtlas.java "$FONT" "$1" "$2" "ssh/res/fonts/$3"
+    java tools/MakeAtlas.java "$FONT" "$1" "$2" "ssh/res/fonts/$3" "$FONT_DIR/DejaVuSans.ttf"
 done
 
 echo "done"

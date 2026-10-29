@@ -67,6 +67,36 @@ public final class Keyboard {
     }
 
     /**
+     * Sends a key from the key bar or the Keys screen.
+     *
+     * @return the entry's action code when it is something for the
+     *         application to do, otherwise 0
+     */
+    public int perform(Keys.Entry entry) {
+        switch (entry.kind) {
+            case Keys.KEY:
+                controlPending = false;
+                terminal.keyPressed(entry.code, 0);
+                return 0;
+            case Keys.SEQUENCE:
+                // A single printable character is typed, so an armed Ctrl
+                // applies to it: Ctrl then "[" from the symbols is Escape.
+                if (entry.sequence.length() == 1 && isPrintable(entry.sequence.charAt(0))) {
+                    type(entry.sequence.charAt(0));
+                } else {
+                    controlPending = false;
+                    terminal.sendSequence(entry.sequence);
+                }
+                return 0;
+            case Keys.CONTROL:
+                toggleControl();
+                return 0;
+            default:
+                return entry.code;
+        }
+    }
+
+    /**
      * Handles a key.
      *
      * @param keyCode    the MIDP key code

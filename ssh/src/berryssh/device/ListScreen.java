@@ -33,6 +33,12 @@ public final class ListScreen extends Canvas {
     private int selected;
     private int scroll;
 
+    /** Where the rows were last drawn, so a touch can find one. */
+    private int rowsTop;
+    private int rowsBottom;
+    private int pressY = -1;
+    private boolean dragged;
+
     public ListScreen(String title, Listener listener) {
         this.title = title;
         this.listener = listener;
@@ -96,6 +102,8 @@ public final class ListScreen extends Canvas {
             scroll = 0;
         }
 
+        rowsTop = top;
+        rowsBottom = bottom;
         g.setClip(0, top, width, bottom - top);
         for (int i = 0; i < visible && scroll + i < names.length; i++) {
             int index = scroll + i;
@@ -120,6 +128,43 @@ public final class ListScreen extends Canvas {
 
     protected void keyPressed(int keyCode) {
         move(keyCode);
+    }
+
+    /**
+     * The 9900 has a touch screen as well as the trackpad: a tap opens a row,
+     * as clicking does, and a drag scrolls the list.
+     */
+    protected void pointerPressed(int x, int y) {
+        pressY = y;
+        dragged = false;
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (pressY < 0) {
+            return;
+        }
+        int rowHeight = Chrome.rowHeight();
+        int moved = (pressY - y) / rowHeight;
+        if (moved != 0) {
+            dragged = true;
+            pressY = y;
+            scroll += moved;
+            select(selected + moved);
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        boolean tap = !dragged && pressY >= 0;
+        pressY = -1;
+        if (!tap || y < rowsTop || y >= rowsBottom) {
+            return;
+        }
+        int index = scroll + (y - rowsTop) / Chrome.rowHeight();
+        if (index >= 0 && index < names.length) {
+            selected = index;
+            repaint();
+            listener.selected(index);
+        }
     }
 
     protected void keyRepeated(int keyCode) {

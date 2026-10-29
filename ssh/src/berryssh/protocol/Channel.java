@@ -133,6 +133,21 @@ public final class Channel {
         awaitReply("shell");
     }
 
+    /**
+     * Runs a command in the pseudo-terminal instead of a shell, as `ssh host
+     * command` does. The channel closes when the command ends.
+     */
+    public void requestExec(String command) throws IOException {
+        WireWriter w = new WireWriter(64 + command.length() * 3);
+        w.writeByte(Message.CHANNEL_REQUEST);
+        w.writeUint32(remoteId);
+        w.writeAsciiString("exec");
+        w.writeBoolean(true);
+        w.writeString(Utf8.encode(command));
+        connection.transport().writePacket(w.toByteArray());
+        awaitReply("exec");
+    }
+
     /** Tells the server the terminal changed size. RFC 4254 sends no reply to this. */
     public void windowChange(int columns, int rows) throws IOException {
         WireWriter w = new WireWriter(48);

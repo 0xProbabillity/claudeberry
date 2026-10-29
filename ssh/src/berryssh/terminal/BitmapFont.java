@@ -49,7 +49,23 @@ public final class BitmapFont {
         0x0130, 0x0131,   // dotted and dotless I
         0x015E, 0x015F,   // S-cedilla
         0x2500, 0x257F,   // box drawing, which is most of what a terminal UI draws
-        0x2580, 0x259F    // block elements
+        0x2580, 0x259F,   // block elements
+        // What Claude Code draws, appended so the cells above keep their index
+        0x2010, 0x2027,   // dashes, curly quotes, bullet, ellipsis
+        0x2030, 0x203B,   // single angle quotes, reference mark
+        0x2190, 0x21BB,   // arrows, return symbol
+        0x2212, 0x221E,   // minus, bullet operator, root, infinity
+        0x22EF, 0x22EF,   // midline ellipsis
+        0x23AF, 0x23BF,   // line extension, the result connector
+        0x23F4, 0x23FA,   // play, pause, record
+        0x25A0, 0x25FF,   // geometric shapes: the tool dot, triangles, squares
+        0x2605, 0x2606,   // stars
+        0x2610, 0x2612,   // ballot boxes
+        0x26A0, 0x26A1,   // warning, high voltage
+        0x2713, 0x2718,   // check marks and crosses
+        0x2722, 0x273D,   // the spinner's asterisks and stars
+        0x2766, 0x2775,   // heavy angle brackets: the prompt chevron
+        0x29C9, 0x29C9    // two joined squares
     };
 
     private final int cellWidth;
