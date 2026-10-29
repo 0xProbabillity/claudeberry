@@ -161,6 +161,14 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private ListScreen settingsScreen;
 
     private SocketConnection socket;
+    /**
+     * The socket's own streams, kept to be closed with it. In MIDP a
+     * connection is only really closed once it and every stream opened on it
+     * are; closing just the socket left the TCP connection, and the server's
+     * session behind it, open after every Disconnect and Reconnect.
+     */
+    private InputStream socketIn;
+    private OutputStream socketOut;
     private Channel channel;
 
     /**
@@ -539,9 +547,12 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             throw new IOException("voice needs a direct connection, not a bridge");
         }
         SocketConnection voiceSocket = openSocket(profile.host(), profile.port());
+        InputStream voiceIn = null;
+        OutputStream voiceOut = null;
         try {
-            Connection voice = new Connection(voiceSocket.openInputStream(),
-                voiceSocket.openOutputStream(), random);
+            voiceIn = voiceSocket.openInputStream();
+            voiceOut = voiceSocket.openOutputStream();
+            Connection voice = new Connection(voiceIn, voiceOut, random);
             HostKey key = voice.handshake();
             if (KnownHosts.check(hostKeys, profile.hostKeyIdentity(), profile.port(), key)
                     != KnownHosts.MATCHED) {
@@ -580,11 +591,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             }
             return VoiceReply.parse(Utf8.decode(reply.toByteArray()));
         } finally {
-            try {
-                voiceSocket.close();
-            } catch (IOException e) {
-                // Nothing more to say on it.
-            }
+            closeAll(voiceIn, voiceOut, voiceSocket);
         }
     }
 
@@ -1000,6 +1007,8 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             socket = openSocket(host, port);
             InputStream in = socket.openInputStream();
             OutputStream out = socket.openOutputStream();
+            socketIn = in;
+            socketOut = out;
 
             // When a path is set the socket is only carrying HTTP, and what
             // SSH actually runs on is the WebSocket inside it. Connection
@@ -1504,14 +1513,35 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         } catch (IOException e) {
             // Going anyway.
         }
+        closeAll(socketIn, socketOut, socket);
+        channel = null;
+        socket = null;
+        socketIn = null;
+        socketOut = null;
+    }
+
+    /** Streams first, then the connection: all three, whatever fails. */
+    private static void closeAll(InputStream in, OutputStream out, SocketConnection connection) {
         try {
-            if (socket != null) {
-                socket.close();
+            if (in != null) {
+                in.close();
             }
         } catch (IOException e) {
             // Going anyway.
         }
-        channel = null;
-        socket = null;
+        try {
+            if (out != null) {
+                out.close();
+            }
+        } catch (IOException e) {
+            // Going anyway.
+        }
+        try {
+            if (connection != null) {
+                connection.close();
+            }
+        } catch (IOException e) {
+            // Going anyway.
+        }
     }
 }
