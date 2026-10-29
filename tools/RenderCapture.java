@@ -19,7 +19,7 @@ import berryssh.terminal.VT320;
  *
  * Host-only tool. Compile against the client classes:
  *
- *   java -cp <classes> RenderCapture capture.bin out.png 80 31 [theme] [font] [bar|panel|symbols]
+ *   java -cp <classes> RenderCapture capture.bin out.png 80 31 [theme] [font] [bar|panel|symbols|voice]
  *   java -Dstatus="[blackberry] me@box" -cp <classes> RenderCapture ...
  *
  * theme is an index into Theme.ALL, font a Profile font index.
@@ -118,8 +118,12 @@ public final class RenderCapture {
             for (int i = 0; i < Keys.BAR.length; i++) {
                 int x0 = i * width / Keys.BAR.length;
                 int x1 = (i + 1) * width / Keys.BAR.length;
-                boolean lit = overlay.equals("panel") && Keys.BAR[i].kind == Keys.ACTION;
-                int face = lit ? theme.colour(13) : theme.statusBar();
+                boolean action = Keys.BAR[i].kind == Keys.ACTION;
+                boolean recording = overlay.equals("voice") && action
+                    && Keys.BAR[i].code == Keys.ACTION_VOICE;
+                boolean lit = recording || (overlay.equals("panel") || overlay.equals("symbols"))
+                    && action && Keys.BAR[i].code == Keys.ACTION_PANEL;
+                int face = !lit ? theme.statusBar() : recording ? 0xd04040 : theme.colour(13);
                 if (lit) {
                     fill(out, x0 + 1, top + 1, x1 - x0 - 2, bar - 2, face);
                 }
