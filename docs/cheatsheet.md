@@ -90,11 +90,11 @@ screen; include it in a bug report.
 ## Voice
 
 1. Tap **Mic** (or panel → `M`). It turns **red**: recording.
-2. Speak your prompt, in Russian or English.
+2. Speak your prompt, in English.
 3. Tap **Mic** again. After ~5 s the text is at the prompt.
 4. Check it, press **Enter**. Enter is never pressed for you.
 
-Language: **Settings → Voice language**. Server setup: [voice.md](voice.md).
+Server setup: [voice.md](voice.md).
 
 ## Claude Code from the phone
 
@@ -153,7 +153,7 @@ Quit, Key codes.
 | Smooth scroll | Scrolling slides instead of jumping |
 | Key bar | The bar of keys along the bottom |
 | Session | tmux (reconnects to the same session) or Plain shell |
-| Voice language | Russian or English, Russian, English |
+| Voice language | English |
 
 `Font +` / `Font −` (menu, or panel → `F` / `V`) change the size live in a session.
 

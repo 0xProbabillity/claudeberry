@@ -32,12 +32,15 @@ public final class Preset {
     private final byte[] hostKey;
     private final boolean autoConnect;
     private final String badge;
+    private final String[] voiceLanguages;
 
-    private Preset(Profile profile, byte[] hostKey, boolean autoConnect, String badge) {
+    private Preset(Profile profile, byte[] hostKey, boolean autoConnect, String badge,
+                   String[] voiceLanguages) {
         this.profile = profile;
         this.hostKey = hostKey;
         this.autoConnect = autoConnect;
         this.badge = badge;
+        this.voiceLanguages = voiceLanguages;
     }
 
     /** The preset in this jar, or null for a jar built without one. */
@@ -59,6 +62,7 @@ public final class Preset {
         String hostKey = "";
         boolean autoConnect = false;
         String badge = "";
+        String[] voiceLanguages = null;
 
         int start = 0;
         while (start < settings.length()) {
@@ -88,6 +92,8 @@ public final class Preset {
                 hostKey = value;
             } else if (field.equals("badge")) {
                 badge = value;
+            } else if (field.equals("voice")) {
+                voiceLanguages = codes(value);
             } else if (field.equals("autoconnect")) {
                 autoConnect = value.equals("yes") || value.equals("true");
             }
@@ -100,7 +106,7 @@ public final class Preset {
         Profile profile = new Profile(name, host, port, user, "", false,
             privateKey, fontSize, "", "", "");
         byte[] blob = hostKey.length() == 0 ? null : Base64.decode(hostKey);
-        return new Preset(profile, blob, autoConnect, badge);
+        return new Preset(profile, blob, autoConnect, badge, voiceLanguages);
     }
 
     public Profile profile() {
@@ -109,6 +115,38 @@ public final class Preset {
 
     public boolean autoConnect() {
         return autoConnect;
+    }
+
+    /**
+     * The voice languages this build offers, from voice=en,de for example, or
+     * null to keep the default.
+     */
+    public String[] voiceLanguages() {
+        return voiceLanguages;
+    }
+
+    /** Comma-separated codes, blanks dropped; null when there are none. */
+    private static String[] codes(String value) {
+        String[] found = new String[8];
+        int count = 0;
+        int start = 0;
+        while (start <= value.length() && count < found.length) {
+            int end = value.indexOf(',', start);
+            if (end < 0) {
+                end = value.length();
+            }
+            String code = value.substring(start, end).trim();
+            if (code.length() > 0) {
+                found[count++] = code;
+            }
+            start = end + 1;
+        }
+        if (count == 0) {
+            return null;
+        }
+        String[] codes = new String[count];
+        System.arraycopy(found, 0, codes, 0, count);
+        return codes;
     }
 
     /** Whose phone this is, shown in the status line: a handle, say. */

@@ -861,10 +861,14 @@ public class TransportTests {
         }
 
         Settings s = Settings.defaults();
-        checkTrue("voice listens for Russian or English by default", "auto".equals(s.voiceLanguage()));
+        checkTrue("voice listens for English by default",
+            "en".equals(s.voiceLanguage(Settings.VOICE_LANGUAGES)));
+        String[] offered = { "auto", "de", "en" };
         try {
             Settings back = Settings.decode(s.withVoice(1).encode());
-            checkTrue("the voice language survives a round trip", "ru".equals(back.voiceLanguage()));
+            checkTrue("the voice language survives a round trip", "de".equals(back.voiceLanguage(offered)));
+            checkTrue("an index past the list falls back to the first",
+                "en".equals(back.voiceLanguage(Settings.VOICE_LANGUAGES)));
         } catch (IOException e) {
             fail("voice setting round trip (threw " + e + ")");
         }
@@ -872,6 +876,11 @@ public class TransportTests {
             Preset p = Preset.parse("host=h\nuser=u\nbadge=@0xProbabillity\n", null);
             checkTrue("a preset carries a badge", "@0xProbabillity".equals(p.badge()));
             checkTrue("and has none unless it says", "".equals(Preset.parse("host=h\nuser=u\n", null).badge()));
+            String[] voice = Preset.parse("host=h\nuser=u\nvoice= auto, de ,en,\n", null).voiceLanguages();
+            checkTrue("a preset can offer voice languages",
+                voice != null && voice.length == 3 && "de".equals(voice[1]) && "en".equals(voice[2]));
+            checkTrue("and keeps the default unless it says",
+                Preset.parse("host=h\nuser=u\n", null).voiceLanguages() == null);
         } catch (IOException e) {
             fail("preset badge (threw " + e + ")");
         }

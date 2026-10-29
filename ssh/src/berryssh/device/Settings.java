@@ -33,9 +33,15 @@ public final class Settings {
     private static final int FORMAT_WITHOUT_SESSION = 2;
     private static final int FORMAT_WITHOUT_VOICE = 3;
 
-    /** What berryssh-transcribe is told to listen for. */
-    public static final String[] VOICE_LANGUAGES = { "auto", "ru", "en" };
-    public static final String[] VOICE_NAMES = { "Russian or English", "Russian", "English" };
+    /**
+     * What berryssh-transcribe is told to listen for: English, unless a preset
+     * lists other codes with voice=, in which case the setting steps through
+     * those. "auto" lets the server choose among the languages it allows.
+     */
+    public static final String[] VOICE_LANGUAGES = { "en" };
+
+    /** How many languages a preset may list; the stored index is kept below it. */
+    private static final int MAX_VOICE_LANGUAGES = 8;
 
     public static final String[] TEXT_NAMES = {
         "From theme", "White", "Light grey", "Grey", "Claude orange",
@@ -111,7 +117,7 @@ public final class Settings {
         this.smoothScroll = smoothScroll;
         this.keyBar = keyBar;
         this.tmux = tmux;
-        this.voice = clamp(voice, VOICE_LANGUAGES.length, 0);
+        this.voice = clamp(voice, MAX_VOICE_LANGUAGES, 0);
     }
 
     public static Settings defaults() {
@@ -162,9 +168,20 @@ public final class Settings {
         return voice;
     }
 
-    /** The language argument for berryssh-transcribe. */
-    public String voiceLanguage() {
-        return VOICE_LANGUAGES[voice];
+    /** The language argument for berryssh-transcribe, out of those offered. */
+    public String voiceLanguage(String[] languages) {
+        return languages[voice < languages.length ? voice : 0];
+    }
+
+    /** How Settings names a language code. */
+    public static String voiceName(String code) {
+        if (code.equals("en")) {
+            return "English";
+        }
+        if (code.equals("auto")) {
+            return "Automatic";
+        }
+        return code.toUpperCase();
     }
 
     public Settings withVoice(int value) {

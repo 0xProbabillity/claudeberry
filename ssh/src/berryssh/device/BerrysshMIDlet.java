@@ -157,6 +157,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
     private Settings settings = Settings.defaults();
     private String badge = "";
     private final VoiceRecorder recorder = new VoiceRecorder();
+    private String[] voiceLanguages = Settings.VOICE_LANGUAGES;
     private volatile boolean transcribing;
     private ListScreen settingsScreen;
 
@@ -231,6 +232,9 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             if (preset != null) {
                 preset.install(store, hostKeys);
                 badge = preset.badge();
+                if (preset.voiceLanguages() != null) {
+                    voiceLanguages = preset.voiceLanguages();
+                }
             }
         } catch (IOException e) {
             preset = null;
@@ -573,7 +577,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             }
             Channel job = Channel.openSession(voice);
             job.requestExec("berryssh-transcribe " + safe(type) + " "
-                + settings.voiceLanguage() + " " + rate);
+                + settings.voiceLanguage(voiceLanguages) + " " + rate);
             for (int at = 0; at < audio.length; at += 8192) {
                 job.write(audio, at, Math.min(8192, audio.length - at));
             }
@@ -1375,7 +1379,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             settings.smoothScroll() ? "On" : "Off",
             settings.keyBar() ? "On" : "Off",
             settings.tmux() ? "tmux (reconnects to the same one)" : "Plain shell",
-            Settings.VOICE_NAMES[settings.voiceIndex()]
+            Settings.voiceName(settings.voiceLanguage(voiceLanguages))
         };
         settingsScreen.setRows(SETTING_ROWS, details);
     }
@@ -1410,7 +1414,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         } else if (index == 7) {
             settings = settings.withTmux(!settings.tmux());
         } else if (index == 8) {
-            settings = settings.withVoice((settings.voiceIndex() + 1) % Settings.VOICE_LANGUAGES.length);
+            settings = settings.withVoice((settings.voiceIndex() + 1) % voiceLanguages.length);
         }
         try {
             settingsStore.save(settings);

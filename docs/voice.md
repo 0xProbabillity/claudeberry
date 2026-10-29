@@ -12,7 +12,7 @@ models: no cloud service, no API key, no account.
 
 - [Install the server half](#install-the-server-half)
 - [Use it](#use-it)
-- [Languages](#languages)
+- [Language](#language)
 - [Choosing a model](#choosing-a-model)
 - [How it works](#how-it-works)
 - [Privacy](#privacy)
@@ -74,20 +74,11 @@ in as) and takes a minute. After that, a phrase takes a few seconds.
 
 Enter is never pressed for you, so a misheard word cannot reach Claude by itself.
 
-## Languages
+## Language
 
-**Settings → Voice language**:
-
-| Setting | What Whisper is told |
-| --- | --- |
-| Russian or English (default) | Detect the language, but only ever choose between Russian and English |
-| Russian | Russian |
-| English | English |
-
-Why not every language Whisper knows? On short phrases, a free choice among 99 languages sometimes hears
-Ukrainian or Belarusian in Russian, or Welsh in mumbled English. Narrowing it to the two that are actually spoken
-makes it reliable. To support other languages, edit `LANGUAGES` in `tools/voice/transcribe.py`; the app sends
-`auto`, `ru` or `en`.
+Voice input understands **English**. The app asks the server for English, and the server's script fixes
+Whisper to it, which is what makes short phrases reliable: left to choose among all 99 of its languages, Whisper
+sometimes hears another one in a few mumbled words.
 
 ## Choosing a model
 
@@ -96,7 +87,7 @@ The model is set by an environment variable in the wrapper. `small` is a good ba
 | Model | Download | RAM | Speed on a small VPS | Quality |
 | --- | --- | --- | --- | --- |
 | `base` | 150 MB | ~0.5 GB | fastest | fine for clear English |
-| `small` (default) | 500 MB | ~1 GB | a few seconds per phrase | good in Russian and English |
+| `small` (default) | 500 MB | ~1 GB | a few seconds per phrase | good |
 | `medium` | 1.5 GB | ~2.5 GB | slower | better with accents and noise |
 
 To change it, edit `/usr/local/bin/berryssh-transcribe`:

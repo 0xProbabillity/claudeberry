@@ -77,7 +77,7 @@ tries direct TCP over Wi-Fi, then direct TCP over any interface, then the phone'
 | `ERR could not decode the recording` | `ffmpeg` is missing on the server, or too old to read AMR. `sudo apt install ffmpeg` |
 | `ERR the recording is empty` | The recording was shorter than a moment |
 | The first prompt after a break takes 10–20 s | Normal: the model is loading. It stays warm for 15 minutes after each prompt |
-| It hears the wrong language | **Settings → Voice language**: pick Russian or English instead of the automatic choice |
+| It mishears words | Speak after the key turns red, close to the phone; on a server with RAM to spare, try the `medium` model ([voice.md](voice.md#choosing-a-model)) |
 | `ERR … No module named faster_whisper` | The virtualenv is broken: run `install.sh` again |
 | Out of memory on a 512 MB server | Use the `base` model ([voice.md](voice.md#choosing-a-model)) or add swap |
 

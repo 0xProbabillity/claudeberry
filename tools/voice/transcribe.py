@@ -11,10 +11,11 @@ the marker is how it tells the answer from anything a library printed.
 content-type is what the phone's recorder reported ("audio/amr",
 "audio/x-wav", "audio/basic", ...); it only matters for raw PCM, which has no
 header for ffmpeg to recognise, and rate is the sample rate it was recorded at,
-for the same reason. language is "ru", "en" or "auto", where auto
-picks whichever of Russian and English the audio is more likely to be: Whisper
-left to choose among all of its languages sometimes hears Ukrainian or
-Belarusian in short Russian phrases.
+for the same reason. language is a Whisper language code such as "en", or
+"auto", which picks whichever of the languages in BERRYSSH_LANGUAGES (English
+alone by default; "en,de" for two) the audio is more likely to be: Whisper left
+to choose among all of its languages sometimes hears the wrong one in a short
+phrase.
 
 Loading the model takes longer than transcribing a phrase, so the first request
 starts a small server that keeps it in memory, and later requests go to it. The
@@ -32,7 +33,8 @@ import tempfile
 import time
 
 MODEL = os.environ.get("BERRYSSH_WHISPER_MODEL", "small")
-LANGUAGES = ("ru", "en")
+LANGUAGES = tuple(code.strip() for code in
+                  os.environ.get("BERRYSSH_LANGUAGES", "en").split(",") if code.strip())
 SOCKET = os.environ.get("BERRYSSH_VOICE_SOCKET", "/tmp/berryssh-voice.sock")
 IDLE_SECONDS = 15 * 60
 
@@ -67,13 +69,15 @@ def transcribe(model, data, content_type, language, rate=8000):
         to_wav(data, content_type, wav, rate)
         audio = decode_audio(wav, sampling_rate=16000)
     fixed = language if language in LANGUAGES else None
+    if fixed is None and len(LANGUAGES) == 1:
+        fixed = LANGUAGES[0]   # nothing to choose between
     # Left to itself, transcribe detects the language from the encoder pass it
     # makes anyway; asking detect_language first would cost a second one.
     segments, info = model.transcribe(audio, language=fixed, beam_size=5,
                                       vad_filter=True)
     if fixed is None and info.language not in LANGUAGES:
-        # It heard something else in a short phrase: take the likelier of
-        # Russian and English and go again.
+        # It heard something else in a short phrase: take the likeliest of
+        # the allowed languages and go again.
         scores = dict(info.all_language_probs or [])
         fixed = max(LANGUAGES, key=lambda code: scores.get(code, 0.0))
         segments, _ = model.transcribe(audio, language=fixed, beam_size=5,

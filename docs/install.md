@@ -104,7 +104,7 @@ To check your build before it goes to the phone, run the test vectors (crypto, S
 computer:
 
 ```sh
-JAVA8_HOME=/path/to/jdk8 spike2/run.sh      # 332 checks, no network needed
+JAVA8_HOME=/path/to/jdk8 spike2/run.sh      # 335 checks, no network needed
 ```
 
 ## Install on the phone

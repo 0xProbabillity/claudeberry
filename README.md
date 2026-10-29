@@ -58,7 +58,7 @@ phone all day", with Claude Code as the yardstick:
 | **Claude Code glyphs** | Missing | `● ⎿ ❯ ✻ ⏵`, box drawing and block elements drawn pixel-exact; Cyrillic too |
 | **Keys an agent needs** | Esc, Ctrl and Tab in menus | A key bar (Esc, Tab, Ctrl, arrows, Enter, Mic) and a quick panel where every cell answers to one letter: Shift+Tab, Ctrl+C, Ctrl+R, PgUp… |
 | **Typing symbols** | The SYM screen only works in text fields | A symbols page with every ASCII symbol, one tap each |
-| **Voice** | None | Speak a prompt; Whisper on *your* server turns it into text at the prompt, in Russian or English |
+| **Voice** | None | Speak a prompt; Whisper on *your* server turns it into text at the prompt (English) |
 | **Touch** | Lists only | Taps reach programs as mouse clicks, swipes as the scroll wheel |
 | **Looks** | Terminal only | Claude, Classic, Amber, Green and Light themes; smooth scrolling; live font size; a home screen and About |
 | **Robustness** | | SSH keep-alive every 30 s; UTF-8 split across packets kept intact; unknown escape sequences swallowed instead of printed; sockets fully closed on disconnect |
@@ -152,7 +152,7 @@ Keep the [cheat sheet](docs/cheatsheet.md) handy for the first few days.
 | --- | --- |
 | [Server setup](docs/server-setup.md) | A key for the phone, `sshd`, firewall, `tmux`, Claude Code |
 | [Building and installing](docs/install.md) | JDK 8, the preset, `build.sh`, Bluetooth / USB / Wi-Fi install, permissions, updating |
-| [Voice input](docs/voice.md) | Whisper on the server, languages, how it works, privacy |
+| [Voice input](docs/voice.md) | Whisper on the server, how it works, privacy |
 | [Cheat sheet](docs/cheatsheet.md) | Key bar, quick panel letters, symbols, Claude Code from the phone |
 | [Troubleshooting](docs/troubleshooting.md) | Install errors, no connection, garbled screen, voice errors |
 
@@ -161,7 +161,7 @@ Keep the [cheat sheet](docs/cheatsheet.md) handy for the first few days.
 ```sh
 lib/fetch.sh                             # MIDP/CLDC and MMAPI stubs and ProGuard, from Maven Central
 JAVA8_HOME=/path/to/jdk8 ./build.sh      # -> out/claudeberry.jad + out/claudeberry.jar
-JAVA8_HOME=/path/to/jdk8 spike2/run.sh   # 332 offline test vectors: crypto, transport, terminal
+JAVA8_HOME=/path/to/jdk8 spike2/run.sh   # 335 offline test vectors: crypto, transport, terminal
 spike2/against-server.sh                 # more, against a real OpenSSH
 ```
 
