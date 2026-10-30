@@ -155,6 +155,12 @@ Quit, Key codes.
 | Key bar | The bar of keys along the bottom |
 | Session | tmux (reconnects to the same session) or Plain shell |
 | Voice language | English |
+| Server address | Shown, or Hidden, name only |
+
+**Server address → Hidden, name only** puts the connection's name where its address would be: in the status line
+(`you@My server  80x29`), the connection list, About, the password prompt and error messages. Use it before you
+film the phone, stream or hand it to someone. The question asked on first contact with an unknown server still shows
+the address, since that is what you are deciding to trust; a preset with a pinned host key never asks it.
 
 `Font +` / `Font −` (menu, or panel → `F` / `V`) change the size live in a session.
 

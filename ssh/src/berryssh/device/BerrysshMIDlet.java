@@ -272,8 +272,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         String[] details = new String[profiles.length + 1];
         for (int i = 0; i < profiles.length; i++) {
             names[i] = profiles[i].name();
-            details[i] = profiles[i].user() + "@" + profiles[i].host()
-                + (profiles[i].port() == 22 ? "" : ":" + profiles[i].port());
+            details[i] = profiles[i].where(settings.showAddress());
         }
         names[profiles.length] = NEW_CONNECTION;
         details[profiles.length] = "add a server";
@@ -325,7 +324,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             if (command == about) {
                 Profile first = profiles.length > 0 ? profiles[0] : null;
                 display.setCurrent(new AboutScreen(version(), badge,
-                    first == null ? "" : first.user() + "@" + first.host(),
+                    first == null ? "" : first.where(settings.showAddress()),
                     new AboutScreen.Listener() {
                         public void closed() {
                             display.setCurrent(connections);
@@ -529,7 +528,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
                         canvas.setStatus("voice: " + text.length() + " characters - check, then Enter");
                     }
                 } catch (IOException e) {
-                    canvas.setStatus("voice: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                    canvas.setStatus("voice: " + shown(e.getMessage() == null ? e.toString() : e.getMessage()));
                 } finally {
                     transcribing = false;
                     canvas.setTranscribing(false);
@@ -952,7 +951,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             return;
         }
         pendingProfile = profile;
-        entry = new TextBox(profile.user() + "@" + profile.host(), "", 64,
+        entry = new TextBox(profile.where(settings.showAddress()), "", 64,
             TextField.PASSWORD);
         entry.addCommand(go);
         entry.addCommand(back);
@@ -997,7 +996,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
         // a session that will not disconnect cleanly is one you cannot leave.
         canvas.addCommand(quit);
         canvas.setCommandListener(this);
-        canvas.setStatus("connecting to " + profile.host() + "...");
+        canvas.setStatus("connecting to " + profile.shownHost(settings.showAddress()) + "...");
         display.setCurrent(canvas);
 
         // Networking must not run on the event thread: on this platform the
@@ -1135,7 +1134,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             terminal.setScrollbackBufferSize(SCROLLBACK_LINES);
             keyboard = new Keyboard(terminal);
             canvas.attach(terminal, keyboard);
-            canvas.setStatus(profile.user() + "@" + host + "  " + columns + "x" + rows);
+            canvas.setStatus(profile.where(settings.showAddress()) + "  " + columns + "x" + rows);
 
             session.requestPty(settings.terminalType(), columns, rows);
             if (settings.tmux()) {
@@ -1259,7 +1258,16 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             return;
         }
         canvas.setStatus("");
-        show(message, AlertType.ERROR, connections);
+        show(shown(message), AlertType.ERROR, connections);
+    }
+
+    /**
+     * Errors quote the address ("no transport reached ..."); with the address
+     * hidden, the connection's name stands in for it there too.
+     */
+    private String shown(String message) {
+        Profile profile = current;
+        return profile == null || settings.showAddress() ? message : profile.conceal(message);
     }
 
     private void show(String message, AlertType type, Displayable next) {
@@ -1357,7 +1365,7 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
 
     private static final String[] SETTING_ROWS = {
         "Theme", "Text colour", "Background", "Font size", "Terminal type",
-        "Smooth scroll", "Key bar", "Session", "Voice language" };
+        "Smooth scroll", "Key bar", "Session", "Voice language", "Server address" };
 
     private void showSettings() {
         if (settingsScreen == null) {
@@ -1388,7 +1396,8 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             settings.smoothScroll() ? "On" : "Off",
             settings.keyBar() ? "On" : "Off",
             settings.tmux() ? "tmux (reconnects to the same one)" : "Plain shell",
-            Settings.voiceName(settings.voiceLanguage(voiceLanguages))
+            Settings.voiceName(settings.voiceLanguage(voiceLanguages)),
+            settings.showAddress() ? "Shown" : "Hidden, name only"
         };
         settingsScreen.setRows(SETTING_ROWS, details);
     }
@@ -1424,6 +1433,9 @@ public final class BerrysshMIDlet extends MIDlet implements CommandListener {
             settings = settings.withTmux(!settings.tmux());
         } else if (index == 8) {
             settings = settings.withVoice((settings.voiceIndex() + 1) % voiceLanguages.length);
+        } else if (index == 9) {
+            settings = settings.withShowAddress(!settings.showAddress());
+            refreshConnections();
         }
         try {
             settingsStore.save(settings);

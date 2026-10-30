@@ -932,6 +932,23 @@ public class TransportTests {
                     && Settings.TMUX_COMMAND.indexOf("escape-time 10") > 0
                     && Settings.TMUX_COMMAND.indexOf("mouse on") > 0
                     && Settings.TMUX_COMMAND.endsWith("|| exec \"$SHELL\" -l"));
+            checkTrue("the address shows by default and survives being hidden",
+                defaults.showAddress()
+                    && !Settings.decode(defaults.withShowAddress(false).encode()).showAddress()
+                    && !defaults.withShowAddress(false).withTheme(2).withVoice(1).showAddress());
+            WireWriter v4 = new WireWriter(40);
+            v4.writeUint32(4);
+            for (int i = 0; i < 5; i++) {
+                v4.writeUint32(i == 4 ? 1 : 0);
+            }
+            v4.writeBoolean(false);
+            v4.writeBoolean(true);
+            v4.writeBoolean(true);
+            v4.writeUint32(2);
+            Settings four = Settings.decode(v4.toByteArray());
+            checkTrue("settings saved before the address switch still read, with it shown",
+                four.showAddress() && four.voiceIndex() == 2 && !four.smoothScroll()
+                    && "vt320".equals(four.terminalType()));
         } catch (IOException e) {
             fail("settings round trip (threw " + e + ")");
         }
@@ -1044,6 +1061,20 @@ public class TransportTests {
             checkTrue("the default port is left out of the label",
                 basic("", "example.org", 22, "bb", "", false)
                     .label().indexOf(":22") < 0);
+
+            Profile vps = basic("VPS", "203.0.113.7", 2222, "root", "", false);
+            checkTrue("where says user@host:port with the address shown",
+                "root@203.0.113.7:2222".equals(vps.where(true))
+                    && "root@example.org".equals(basic("", "example.org", 22, "root", "", false).where(true)));
+            checkTrue("and user@name with it hidden, port and all left out",
+                "root@VPS".equals(vps.where(false)) && "VPS".equals(vps.shownHost(false))
+                    && "203.0.113.7".equals(vps.shownHost(true)));
+            checkTrue("a connection without a name is called server",
+                "root@server".equals(basic("", "203.0.113.7", 22, "root", "", false).where(false)));
+            checkTrue("errors lose every mention of the address",
+                "no transport reached VPS:2222 (VPS)".equals(
+                    vps.conceal("no transport reached 203.0.113.7:2222 (203.0.113.7)"))
+                    && "nothing to hide".equals(vps.conceal("nothing to hide")));
 
             Profile bridged = new Profile("pve", "ssh.example.org", 80, "root", "",
                 false, "", 0, "/", "correct horse battery staple", "pve");

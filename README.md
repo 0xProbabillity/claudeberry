@@ -91,6 +91,8 @@ trust on first use, and the authenticated WebSocket bridge for servers the phone
   for you to check it and press Enter. Transcribed by [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
   on your own server.
 - **Touch where it helps.** Tap a tab in a TUI to click it, swipe to scroll, tap the keys on the bar.
+- **Safe to film.** Settings → Server address → *Hidden, name only* shows `you@My server` instead of the address
+  everywhere on screen, so a demo or a stream does not give your server away.
 - **Modern cryptography only.** Curve25519, Ed25519, ChaCha20-Poly1305 and SHA-2, written for the phone and
   tested against published vectors and a real OpenSSH.
 

@@ -198,6 +198,47 @@ public final class Profile {
     }
 
     /**
+     * Who and where, as a session's status line says it: user@host, with the
+     * port when it is not 22. With the address hidden the connection's name
+     * stands in for the host, so the screen can be filmed or shown without
+     * giving the server away.
+     */
+    public String where(boolean showAddress) {
+        if (!showAddress) {
+            return user + "@" + shownName();
+        }
+        String where = user + "@" + host;
+        return port == 22 ? where : where + ":" + port;
+    }
+
+    /** The host, or with the address hidden the connection's name. */
+    public String shownHost(boolean showAddress) {
+        return showAddress ? host : shownName();
+    }
+
+    /**
+     * A message with every mention of the host replaced by the connection's
+     * name, for errors that quote the address when it is meant to be hidden.
+     */
+    public String conceal(String text) {
+        if (text == null || host.length() == 0) {
+            return text;
+        }
+        String out = "";
+        int from = 0;
+        int at;
+        while ((at = text.indexOf(host, from)) >= 0) {
+            out = out + text.substring(from, at) + shownName();
+            from = at + host.length();
+        }
+        return out + text.substring(from);
+    }
+
+    private String shownName() {
+        return name.length() > 0 ? name : "server";
+    }
+
+    /**
      * Serialises for storage.
      *
      * The password is written only when it was meant to be kept. Storing it and
