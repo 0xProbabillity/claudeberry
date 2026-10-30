@@ -115,9 +115,20 @@ the terminal; Enter is left to you.
 
 ## Requirements
 
-- **A BlackBerry on OS 7 or 7.1 with a keyboard.** Developed on and used daily with a **Bold 9900** (OS 7.1);
-  berryssh was confirmed on a Bold 9790. Other OS 7 devices (9930, 9780, 9360, 9380…) should work but are
-  untested; reports welcome.
+- **A BlackBerry on OS 7 or 7.1, ideally with a keyboard.** ClaudeBerry is a plain Java ME MIDlet, so it runs
+  wherever BlackBerry OS runs Java; how well depends on the screen, the keyboard and the processor.
+
+  | Phones | Screen | How it goes |
+  | --- | --- | --- |
+  | **Bold 9900 / 9930**, Porsche Design P'9981, Torch 9810 | 640×480, keyboard | The target: 80 columns at the default size. Developed and used daily on a 9900 (OS 7.1) |
+  | **Bold 9790**, Curve 9360 / 9370, Curve 9620 / 9720 | 480×360, keyboard | Should work: about 60 columns, or 80 with the smallest font. berryssh was confirmed on a 9790 |
+  | Curve 9220 / 9310 / 9315 / 9320 | 320×240, keyboard | Should run, but cramped and slow to connect |
+  | Torch 9850 / 9860, Curve 9380 | Touch only | Should run; the key bar and quick panel help, the on-screen keyboard does not |
+  | OS 5 and 6: Bold 9700 / 9780, Torch 9800, Curve 8520 / 9300 | various | Untested. Same Java platform, but a slower processor makes the key exchange take much longer |
+
+  Only the 9900 and 9790 are confirmed; reports from other models are welcome. **BlackBerry 10** (Q10, Q5, Z10,
+  Passport, Classic) has no Java ME and cannot run it, nor can the Android BlackBerrys (Priv, KEYone, KEY2): use a
+  native terminal there.
 - **A network the phone can use**: Wi-Fi, or mobile data with the APN set
   (see [troubleshooting](docs/troubleshooting.md#no-transport-reached)).
 - **A server you can SSH into** with OpenSSH 6.5 or newer: any Linux VPS, home server or Raspberry Pi.
